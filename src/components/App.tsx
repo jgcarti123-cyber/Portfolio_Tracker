@@ -18,6 +18,7 @@ import { AssetView } from "./AssetView";
 import { ActiveFilters, FilterButton } from "./FilterBar";
 import { Gate, Logo } from "./Gate";
 import { Highlights } from "./Highlights";
+import { History } from "./History";
 import { Holdings } from "./Holdings";
 import { ImportFlow } from "./ImportFlow";
 import { NetWorthChart } from "./NetWorthChart";
@@ -76,6 +77,7 @@ function Portfolio() {
   const filtered = activeCount(filter) > 0;
   const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const [assistOpen, setAssistOpen] = useState(false);
+  const [view, setView] = useState<"dashboard" | "history">("dashboard");
   const closeAssist = useCallback(() => setAssistOpen(false), []);
   // The assistant always sees the whole portfolio, whatever the dashboard filter.
   const whole = useMemo(() => {
@@ -95,9 +97,23 @@ function Portfolio() {
     <div className={`transition-[padding] duration-300 ${assistOpen ? "lg:pr-[400px]" : ""}`}>
       <header className="sticky top-0 z-30 border-b border-transparent bg-[color-mix(in_srgb,var(--canvas)_78%,transparent)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
-          <button type="button" onClick={() => setOpenId(null)} aria-label="Folio home" className="press">
-            <Logo />
-          </button>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button type="button" onClick={() => (setOpenId(null), setView("dashboard"))} aria-label="Folio home" className="press">
+              <Logo />
+            </button>
+            {!empty && (
+              <Segmented
+                options={[
+                  { value: "dashboard", label: "Dashboard" },
+                  { value: "history", label: "History" },
+                ]}
+                value={view}
+                onChange={(v) => (setOpenId(null), setView(v))}
+                label="Page"
+                size="sm"
+              />
+            )}
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!empty && (
               <button
@@ -126,7 +142,7 @@ function Portfolio() {
               label="Display currency"
               size="sm"
             />
-            {!openAsset && !empty && (
+            {!openAsset && !empty && view === "dashboard" && (
               <FilterButton
                 filter={filter}
                 onChange={setFilter}
@@ -162,7 +178,7 @@ function Portfolio() {
             </Button>
           </div>
         </div>
-        {!openAsset && !empty && (
+        {!openAsset && !empty && view === "dashboard" && (
           <ActiveFilters
             filter={filter}
             onChange={setFilter}
@@ -186,6 +202,8 @@ function Portfolio() {
           />
         ) : empty ? (
           <Welcome onAdd={() => setAdding(true)} onImport={() => setImporting(true)} />
+        ) : view === "history" ? (
+          <History data={data} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} />
         ) : (
           <main className="space-y-4">
             {filtered && !scoped.positions.length ? (

@@ -115,3 +115,14 @@ export function qtyAt(txns: Txn[], ts: number) {
   for (const t of txns) if (t.ts <= ts) q += t.type === "buy" ? t.qty : -t.qty;
   return Math.max(0, q);
 }
+
+/** Whether a record is a holding added to Folio as it stood, not a real buy/sell that day. Sales never are. */
+export function isOpening(t: Txn, all: Txn[]) {
+  if (t.opening !== undefined) return t.opening;
+  if (t.type !== "buy") return false;
+  // Older records carry no flag: the earliest unflagged buy of each asset is the entry made when it was added.
+  const first = all
+    .filter((x) => x.assetId === t.assetId && x.type === "buy" && x.opening === undefined)
+    .reduce<Txn | null>((a, x) => (!a || x.ts < a.ts ? x : a), null);
+  return first?.id === t.id;
+}

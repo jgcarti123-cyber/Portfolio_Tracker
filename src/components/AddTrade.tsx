@@ -270,7 +270,7 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
     for (const l of activeLegs) {
       // Selling (almost exactly) everything closes the position, without leaving rounding dust.
       const units = type === "sell" && near(l.qty, heldAt(l.accountId)) ? heldAt(l.accountId) : l.qty;
-      addTxn({ assetId: asset.id, accountId: l.accountId, type, qty: units, price: p, ts });
+      addTxn({ assetId: asset.id, accountId: l.accountId, type, qty: units, price: p, ts, opening: false });
     }
     onSaved?.(type === "buy" ? "Purchase added" : "Sale added");
     onClose();

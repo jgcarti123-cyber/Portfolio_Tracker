@@ -185,7 +185,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           asset = { ...r.asset, id: uid() };
           assets.push(asset);
         }
-        txns.push({ id: uid(), assetId: asset.id, accountId: account.id, type: "buy", qty: r.qty, price: r.price, ts: r.ts });
+        txns.push({ id: uid(), assetId: asset.id, accountId: account.id, type: "buy", qty: r.qty, price: r.price, ts: r.ts, opening: true, via: `${account.name} statement` });
       }
       commit({ ...d, accounts, assets, txns });
       return account.id;

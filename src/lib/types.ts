@@ -43,6 +43,14 @@ export interface Txn {
   /** Per unit, in the asset's currency. */
   price: number;
   ts: number;
+  /**
+   * True for a holding added to Folio as it already stood (imported, or added with
+   * what was invested), rather than a buy or sell made that day. Older records have no
+   * flag; for them the first record of each asset counts as the opening entry.
+   */
+  opening?: boolean;
+  /** Where an opening entry came from, e.g. "Groww statement". */
+  via?: string;
 }
 
 /** A card the assistant showed inside a reply: a trade to confirm, or a what-if result. */

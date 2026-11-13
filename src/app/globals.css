@@ -373,6 +373,17 @@ p {
   }
 }
 
+/* Trade stickers pop onto the chart. */
+@keyframes pin-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+}
+.pin-in {
+  animation: pin-in 0.45s var(--ease-out-quint) both;
+}
+
 /* Gain/loss ring around an asset logo draws in from the top. */
 @keyframes ring-grow {
   from {
@@ -423,6 +434,7 @@ p {
 
 @media (prefers-reduced-motion: reduce) {
   .ping,
+  .pin-in,
   .assistant-in,
   .ring-grow,
   .grow-from-left,

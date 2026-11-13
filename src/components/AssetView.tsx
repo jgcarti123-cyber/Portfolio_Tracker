@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { dateTime, money, pct, price as fmtPrice, qty, signed } from "@/lib/format";
-import type { Position } from "@/lib/portfolio";
+import { isOpening, type Position } from "@/lib/portfolio";
 import { fetchHistory } from "@/lib/prices";
 import { useStore } from "@/lib/store";
 import { useTheme } from "@/lib/theme";
 import { CLASS_META, type Asset, type Candle, type Currency, type Range, type Txn } from "@/lib/types";
 import { AddTrade } from "./AddTrade";
 import { AssetBadge } from "./Holdings";
-import { PriceChart, type ChartPoint } from "./PriceChart";
+import { PriceChart, type ChartPoint, type ChartTrade } from "./PriceChart";
+import { ExternalIcon, TradingViewChart, tvEmbeddable, tvSymbol, tvUrl } from "./TradingView";
 import { Button, Card, CardHead, Delta, Icon, Segmented, useAnimatedNumber } from "./ui";
 
 const RANGES = (["1D", "1W", "1M", "3M", "1Y", "5Y"] as const).map((r) => ({ value: r, label: r }));
@@ -50,6 +51,9 @@ export function AssetView({
   const [adding, setAdding] = useState(false);
   const [manual, setManual] = useState("");
   const [point, setPoint] = useState<ChartPoint | null>(null);
+  const [loadingRange, setLoadingRange] = useState(false);
+  const [source, setSource] = useState<"folio" | "tv">("folio");
+  const [flash, setFlash] = useState<string | null>(null);
 
   const txns = useMemo(() => data.txns.filter((t) => t.assetId === asset.id).sort((a, b) => b.ts - a.ts), [data.txns, asset.id]);
   const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "Unknown";
@@ -59,17 +63,43 @@ export function AssetView({
   useEffect(() => {
     if (!asset.symbol) return;
     const ctrl = new AbortController();
-    setCandles(null);
+    // Keep the current chart on screen while the next range loads (no blank flash).
+    setLoadingRange(true);
     setChartError("");
     setPoint(null);
     fetchHistory(asset, range, false, ctrl.signal)
-      .then(setCandles)
+      .then((c) => (setCandles(c), setLoadingRange(false)))
       .catch((e) => {
-        if (e.name !== "AbortError") setChartError("The price chart couldn't be loaded. Try another range, or again in a minute.");
+        if (e.name === "AbortError") return;
+        setLoadingRange(false);
+        setChartError("The price chart couldn't be loaded. Try another range, or again in a minute.");
       });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.id, asset.symbol, asset.currency, range]);
+
+  const tv = tvSymbol(asset);
+  const embed = tv && tvEmbeddable(asset) ? tv : null;
+  // Stickers only for real buys and sells, not the entry made when the holding was added.
+  const chartTrades = useMemo<ChartTrade[]>(
+    () =>
+      txns
+        .filter((t) => !isOpening(t, data.txns))
+        .map((t) => ({
+          id: t.id,
+          ts: t.ts,
+          price: t.price,
+          type: t.type,
+          title: `${t.type === "buy" ? "Bought" : "Sold"} ${qty(t.qty)} ${CLASS_META[asset.cls].unit} at ${fmtPrice(t.price, asset.currency)}`,
+          detail: `${new Date(t.ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${data.accounts.find((a) => a.id === t.accountId)?.name ?? ""}`,
+        })),
+    [txns, data.txns, data.accounts, asset.cls, asset.currency],
+  );
+  function showTrade(id: string) {
+    document.getElementById(`trade-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlash(id);
+    setTimeout(() => setFlash((f) => (f === id ? null : f)), 1800);
+  }
 
   // Funds publish one NAV a day, so there are no candles to draw.
   const lineOnly = !!candles?.length && candles.every((c) => c.o === c.c && c.h === c.l);
@@ -101,8 +131,13 @@ export function AssetView({
               </span>
               <div className="min-w-0">
                 <h1 className="truncate text-lg font-extrabold tracking-tight">{asset.name}</h1>
-                <p className="text-[13px] text-ink-2">
+                <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-ink-2">
                   {asset.ticker} · {CLASS_META[asset.cls].short}
+                  {tv && (
+                    <a href={tvUrl(tv)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">
+                      Open in TradingView {ExternalIcon}
+                    </a>
+                  )}
                 </p>
               </div>
             </div>
@@ -123,43 +158,68 @@ export function AssetView({
           {asset.symbol ? (
             <>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <Segmented options={RANGES} value={range} onChange={setRange} label="Chart range" size="sm" />
-                {!lineOnly && (
-                  <Segmented
-                    options={[
-                      { value: "line", label: "Line" },
-                      { value: "candles", label: "Candles" },
-                    ]}
-                    value={mode}
-                    onChange={setMode}
-                    label="Chart style"
-                    size="sm"
-                  />
-                )}
+                {source === "folio" ? <Segmented options={RANGES} value={range} onChange={setRange} label="Chart range" size="sm" /> : <span className="text-xs text-ink-3">TradingView&apos;s chart — your trades aren&apos;t drawn here</span>}
+                <div className="flex flex-wrap items-center gap-2">
+                  {source === "folio" && !lineOnly && (
+                    <Segmented
+                      options={[
+                        { value: "line", label: "Line" },
+                        { value: "candles", label: "Candles" },
+                      ]}
+                      value={mode}
+                      onChange={setMode}
+                      label="Chart style"
+                      size="sm"
+                    />
+                  )}
+                  {embed && (
+                    <Segmented
+                      options={[
+                        { value: "folio", label: "Folio" },
+                        { value: "tv", label: "TradingView" },
+                      ]}
+                      value={source}
+                      onChange={setSource}
+                      label="Chart source"
+                      size="sm"
+                    />
+                  )}
+                </div>
               </div>
-              <div className="relative mt-4 min-h-[340px] flex-1" onMouseLeave={() => setPoint(null)}>
-                {chartError ? (
+              <div className="relative mt-4 min-h-[360px] flex-1" onMouseLeave={() => setPoint(null)}>
+                {source === "tv" && embed ? (
+                  <div className="absolute inset-0">
+                    <TradingViewChart symbol={embed} theme={theme} />
+                  </div>
+                ) : chartError && !candles ? (
                   <p className="absolute inset-0 grid place-items-center text-center text-sm text-ink-2">{chartError}</p>
                 ) : candles === null ? (
                   <div className="skeleton absolute inset-0" />
                 ) : candles.length === 0 ? (
                   <p className="absolute inset-0 grid place-items-center text-sm text-ink-2">No price data for this range.</p>
                 ) : (
-                  <div className="absolute inset-0">
-                  <PriceChart
-                    candles={candles}
-                    mode={lineOnly ? "line" : mode}
-                    intraday={range === "1D" || range === "1W"}
-                    avgCost={position && position.qty > 0 ? position.avgPrice : null}
-                    txns={txns}
-                    theme={theme}
-                    onHover={setPoint}
-                    height="100%"
-                  />
+                  <div className={`absolute inset-0 transition-opacity duration-200 ${loadingRange ? "opacity-50" : ""}`}>
+                    <PriceChart
+                      candles={candles}
+                      mode={lineOnly ? "line" : mode}
+                      intraday={range === "1D" || range === "1W"}
+                      avgCost={position && position.qty > 0 ? position.avgPrice : null}
+                      trades={chartTrades}
+                      theme={theme}
+                      onHover={setPoint}
+                      onTradeClick={showTrade}
+                      height="100%"
+                    />
                   </div>
                 )}
+                {loadingRange && source === "folio" && candles && (
+                  <span className="absolute right-16 top-2 flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] text-ink-3 shadow-card ring-1 ring-line">
+                    <span className="size-3 animate-spin rounded-full border-2 border-line border-t-accent" />
+                    Loading {range}
+                  </span>
+                )}
               </div>
-              <OnThisDay point={point} txns={txns} position={position} cur={cur} unit={unit} intraday={range === "1D" || range === "1W"} />
+              {source === "folio" && <OnThisDay point={point} txns={txns} position={position} cur={cur} unit={unit} intraday={range === "1D" || range === "1W"} />}
             </>
           ) : (
             <p className="mt-6 rounded-2xl bg-sunken p-5 text-sm leading-relaxed text-ink-2">
@@ -235,21 +295,28 @@ export function AssetView({
       <Card className="p-5 sm:p-6">
         <CardHead icon={Icon.list} title="Trades" />
         <ul className="mt-3 divide-y divide-line">
-          {txns.map((t) => (
-            <li key={t.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+          {txns.map((t) => {
+            const opening = isOpening(t, data.txns);
+            return (
+            <li
+              key={t.id}
+              id={`trade-${t.id}`}
+              className={`-mx-2 flex scroll-mt-24 items-center justify-between gap-3 rounded-xl px-2 py-3 text-sm transition-colors duration-500 ${flash === t.id ? "bg-accent-soft" : ""}`}
+            >
               <div className="flex min-w-0 items-center gap-3">
                 <span
-                  className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ${t.type === "buy" ? "bg-accent-soft text-accent" : "bg-sunken text-ink"}`}
+                  className={`grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ${opening ? "bg-sunken text-ink-3" : t.type === "buy" ? "bg-accent-soft text-accent" : "bg-sunken text-ink"}`}
                   aria-hidden
                 >
-                  {t.type === "buy" ? "B" : "S"}
+                  {opening ? "+" : t.type === "buy" ? "B" : "S"}
                 </span>
                 <div className="min-w-0">
                   <p className="font-semibold">
-                    {t.type === "buy" ? "Bought" : "Sold"} <span className="num">{qty(t.qty)}</span> at <span className="num">{fmtPrice(t.price, cur)}</span>
+                    {opening ? "Added to Folio" : t.type === "buy" ? "Bought" : "Sold"} <span className="num">{qty(t.qty)}</span> {opening ? "at avg" : "at"}{" "}
+                    <span className="num">{fmtPrice(t.price, cur)}</span>
                   </p>
                   <p className="text-xs text-ink-2">
-                    {dateTime(t.ts)} · {accountName(t.accountId)}
+                    {opening ? `${t.via ? `From ${t.via}` : "Added"} on ${new Date(t.ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}` : dateTime(t.ts)} · {accountName(t.accountId)}
                   </p>
                 </div>
               </div>
@@ -269,7 +336,8 @@ export function AssetView({
                 </button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Card>
 

@@ -502,7 +502,7 @@ function TradeCard({
       if (!(l.qty! > 0)) continue;
       const here = b.held.byAccount[l.accountId] ?? 0;
       const units = res.type === "sell" && Math.abs(l.qty! - here) <= Math.max(1e-9, here * 1e-7) ? here : l.qty!;
-      addTxn({ assetId: id, accountId: l.accountId, type: res.type!, qty: units, price: p, ts });
+      addTxn({ assetId: id, accountId: l.accountId, type: res.type!, qty: units, price: p, ts, opening: false, via: "Ask Folio" });
     }
     onUpdate({ status: "saved", saved: summary });
     onSaved(res.type === "sell" ? "Sale added" : "Purchase added");

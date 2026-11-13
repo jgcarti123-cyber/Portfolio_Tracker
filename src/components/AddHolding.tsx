@@ -201,7 +201,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
     const account = data.accounts.find((a) => a.id === accountId) ?? addAccount(newAccount);
     const asset = upsertAsset(picked);
     if (noFeed) updateAsset(asset.id, { manualPrice: { price: nWorth, ts: Date.now() } });
-    addTxn({ assetId: asset.id, accountId: account.id, type: "buy", qty: derived.qty, price: derived.avg, ts });
+    addTxn({ assetId: asset.id, accountId: account.id, type: "buy", qty: derived.qty, price: derived.avg, ts, opening: true, via: "added by hand" });
     onSaved?.(`${picked.name} added`);
     onClose();
   }
