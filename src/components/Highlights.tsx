@@ -123,7 +123,7 @@ export function Highlights({
   const inDisplay = (p: Position, n: number) => convert(n, p.asset.currency, currency, usdInr);
 
   return (
-    <Card className="p-5 sm:p-6">
+    <Card className="h-full p-5 sm:p-6">
       <header className="flex items-center gap-2.5">
         <IconTile color="var(--cat-2)">{ico("M8 1.8l1.8 3.9 4.2.5-3.1 2.9.8 4.2L8 11.2l-3.7 2.1.8-4.2L2 6.2l4.2-.5z")}</IconTile>
         <h2 className="text-[15px] font-semibold">Highlights</h2>

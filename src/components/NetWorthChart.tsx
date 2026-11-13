@@ -51,7 +51,7 @@ function toBars(points: DayValue[]): Bar[] {
   return out.reverse();
 }
 
-const MIN_H = 230;
+const MIN_H = 260;
 const PAD = { top: 44, bottom: 26, right: 54 };
 
 function niceStep(range: number, count: number) {
@@ -311,7 +311,7 @@ export function NetWorthChart({
 
       <div
         ref={ref}
-        className="relative mt-2 min-h-[230px] flex-1 touch-pan-y outline-none"
+        className="relative mt-2 min-h-[260px] flex-1 touch-pan-y outline-none"
         tabIndex={0}
         role="img"
         aria-label={`Net worth, ${MODES.find((m) => m.value === mode)!.label.toLowerCase()}, ${SPAN_WORD[span].toLowerCase()}. Use the arrow keys to read each column.`}

@@ -93,14 +93,14 @@ export function CashCard({
     `press inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold ring-1 transition-colors ${on ? "bg-ink text-canvas ring-ink" : "bg-surface text-ink-2 ring-line hover:text-ink"}`;
 
   return (
-    <Card className="p-5 sm:p-6">
+    <Card className="@container h-full p-5 sm:p-6">
       <CardHead icon={Icon.wallet} title="Cash" color={CASH_COLOR}>
         <span className="num text-[17px] font-extrabold tracking-tight">
           {money(total, currency, { decimals: 0 })}
         </span>
       </CardHead>
 
-      <div className="mt-4 grid gap-x-6 gap-y-4 md:grid-cols-2">
+      <div className="mt-4 grid gap-x-6 gap-y-4 @2xl:grid-cols-2">
         <div>
           <div className="grid grid-cols-2 gap-2">
             {(["INR", "USD"] as Currency[]).map((c) => (
