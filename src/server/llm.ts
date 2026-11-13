@@ -74,6 +74,7 @@ export async function chatJson<T>(
         const err = JSON.parse(detail) as { error?: { code?: string; failed_generation?: string } };
         const gen = err.error?.code === "json_validate_failed" ? err.error.failed_generation : undefined;
         if (gen && gen.trim()) {
+          if (process.env.NODE_ENV !== "production") console.info(`[llm] invalid JSON, using text: ${gen.slice(0, 400)}`);
           const obj = gen.match(/\{[\s\S]*\}/);
           if (obj) {
             try {

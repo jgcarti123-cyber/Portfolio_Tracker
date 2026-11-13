@@ -1,5 +1,6 @@
 "use client";
 
+import { CASH_COLOR } from "@/lib/cash";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { compact, day, money, pct, signed } from "@/lib/format";
 import type { DayValue } from "@/lib/networth";
@@ -7,6 +8,12 @@ import type { Totals } from "@/lib/portfolio";
 import type { Today } from "@/lib/today";
 import { CLASS_META, CLASS_ORDER, type Currency } from "@/lib/types";
 import { Delta, Icon, IconTile, Segmented } from "./ui";
+
+/** Stacking order for "By type": each asset type, then cash on top. */
+const STACK = [...CLASS_ORDER, "cash"] as const;
+type StackKey = (typeof STACK)[number];
+const stackVal = (d: DayValue, k: StackKey) => (k === "cash" ? (d.cash ?? 0) : d.byClass[k]);
+const stackColor = (k: StackKey) => (k === "cash" ? CASH_COLOR : CLASS_META[k].color);
 
 type Mode = "value" | "stack" | "change";
 type Span = "1W" | "1M" | "3M" | "1Y" | "ALL";
@@ -129,6 +136,7 @@ export function NetWorthChart({
         invested: 0,
         move: 0,
         byClass: Object.fromEntries(CLASS_ORDER.map((c) => [c, 0])) as DayValue["byClass"],
+        cash: 0,
       }));
       list = [...empty, ...list];
     }
@@ -195,19 +203,19 @@ export function NetWorthChart({
                   style={{ animationDelay: `${i * 12}ms`, transition: "opacity .2s" }}
                 />
               );
-            const segs = CLASS_ORDER.filter((c) => b.end.byClass[c] > 0);
+            const segs = STACK.filter((c) => stackVal(b.end, c) > 0);
             let acc = 0;
             return (
               <g key={b.ts} className="bar-rise" style={{ animationDelay: `${i * 12}ms`, transition: "opacity .2s" }} opacity={i === active ? 1 : hovering ? 0.35 : 0.85}>
                 {segs.map((c, k) => {
-                  const v = b.end.byClass[c];
+                  const v = stackVal(b.end, c);
                   const y0 = y(acc) - (k ? 2 : 0); // 2px surface gap between segments
                   const y1 = y(acc + v);
                   acc += v;
                   return k === segs.length - 1 ? (
-                    <path key={c} d={column(bx(i), y0, Math.min(y1, y0 - 1), bw)} fill={CLASS_META[c].color} />
+                    <path key={c} d={column(bx(i), y0, Math.min(y1, y0 - 1), bw)} fill={stackColor(c)} />
                   ) : (
-                    <rect key={c} x={bx(i)} y={y1} width={bw} height={Math.max(1, y0 - y1)} fill={CLASS_META[c].color} />
+                    <rect key={c} x={bx(i)} y={y1} width={bw} height={Math.max(1, y0 - y1)} fill={stackColor(c)} />
                   );
                 })}
               </g>
@@ -452,10 +460,10 @@ function Legend({ mode, bar, currency }: { mode: Mode; bar: Bar | undefined; cur
         <span className="text-xs text-ink-3">New money not counted</span>
       </div>
     );
-  const present = CLASS_ORDER.filter((c) => (bar?.end.byClass[c] ?? 0) > 0);
+  const present = STACK.filter((c) => (bar ? stackVal(bar.end, c) : 0) > 0);
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1">
-      {present.map((c) => item(c, box(CLASS_META[c].color), CLASS_META[c].label, compact(bar!.end.byClass[c], currency)))}
+      {present.map((c) => item(c, box(stackColor(c)), c === "cash" ? "Cash" : CLASS_META[c].label, compact(stackVal(bar!.end, c), currency)))}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { cashBalances, type CashBalances } from "./cash";
 import { convert, type Position } from "./portfolio";
 import { fetchHistory, type Market } from "./prices";
 import { CLASS_ORDER, type AssetClass, type Candle, type Currency, type VaultData } from "./types";
@@ -12,6 +13,8 @@ export interface DayValue {
   /** Cost of what was held that day (money put in, average-cost method). */
   invested: number;
   byClass: Record<AssetClass, number>;
+  /** Cash held at the end of the day (counted in value and invested, so never a gain). */
+  cash: number;
   /**
    * Market gain or loss that day: units held at the previous close × the price change
    * (plus the exchange-rate change). Money added or taken out doesn't count.
@@ -104,10 +107,19 @@ export function buildSeries(
   const out: DayValue[] = [];
   // Yesterday's units, price and rate per asset, for the daily market move.
   const prev = new Map<string, { qty: number; price: number; fx: number }>();
+  let prevCash: { bal: CashBalances; fx: number } | null = null;
   for (let i = HISTORY_DAYS - 1; i >= 0; i--) {
     const ts = i === 0 ? now : new Date(now - i * DAY).setHours(23, 59, 59, 999);
     const fxThen = i === 0 ? market.usdInr : (closeAt(market.fxSeries, ts) ?? market.usdInr);
-    const day: DayValue = { ts, value: 0, invested: 0, byClass: zeroClasses(), move: 0 };
+    const day: DayValue = { ts, value: 0, invested: 0, byClass: zeroClasses(), cash: 0, move: 0 };
+    // Cash: its value only moves with the exchange rate; money in or out isn't a move.
+    const bal = cashBalances(data, ts);
+    const cashIn = (b: CashBalances, fx: number) => convert(b.INR, "INR", display, fx) + convert(b.USD, "USD", display, fx);
+    day.cash = cashIn(bal, fxThen);
+    day.value += day.cash;
+    day.invested += day.cash;
+    if (prevCash) day.move += cashIn(prevCash.bal, fxThen) - cashIn(prevCash.bal, prevCash.fx);
+    prevCash = { bal, fx: fxThen };
     for (const { asset, txns } of byAsset) {
       // Replay trades up to this day: units held and their average cost.
       let qty = 0;

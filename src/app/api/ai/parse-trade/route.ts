@@ -23,13 +23,14 @@ Rules:
 - totalCurrency: "INR" or "USD" for the total, from symbols or words; null if not stated.
 - date: YYYY-MM-DD resolved against today's date ("yesterday", "last Friday", "on 3rd Nov", "2 days ago"). null if not mentioned (means today).
 - time: HH:MM 24-hour only if stated.
+- paidFrom: "cash" if they say a buy was paid from their cash/balance/wallet, "new" if from new money/bank/salary; otherwise null.
 - broker: exactly one of the given broker names if mentioned (match loosely, e.g. "ind money" → "INDmoney"); otherwise null.
 - understood: one short plain-English sentence restating the trade, e.g. "Sell all your units on Groww at today's price."
 - missing: list of what is still needed to save, from ["type","quantity","price","date"] — "quantity" is satisfied by quantity, quantityRule or total; "price" by pricePerUnit, priceRule, or total together with quantity.
 - unclear: a short question if the message is ambiguous or about a different holding, else null.
 
 Reply with JSON only:
-{"type":null,"quantity":null,"quantityRule":null,"fraction":null,"keep":null,"pricePerUnit":null,"priceRule":null,"total":null,"totalCurrency":null,"date":null,"time":null,"broker":null,"understood":"","missing":[],"unclear":null}`;
+{"type":null,"quantity":null,"quantityRule":null,"fraction":null,"keep":null,"pricePerUnit":null,"priceRule":null,"total":null,"totalCurrency":null,"date":null,"time":null,"broker":null,"paidFrom":null,"understood":"","missing":[],"unclear":null}`;
 
 const num = (v: unknown) => (typeof v === "number" && isFinite(v) && v > 0 ? v : null);
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
       date,
       time: typeof r.time === "string" && /^\d{2}:\d{2}$/.test(r.time) ? r.time : null,
       broker,
+      paidFrom: r.paidFrom === "cash" || r.paidFrom === "new" ? r.paidFrom : null,
       understood: str(r.understood, 200),
       unclear: typeof r.unclear === "string" && r.unclear.trim() ? str(r.unclear, 200) : null,
     });

@@ -99,6 +99,8 @@ export function applyFilter(
       ...data,
       assets: data.assets.filter((a) => ids.has(a.id)),
       txns: data.txns.filter((t) => ids.has(t.assetId) && (!f.accounts.length || f.accounts.includes(t.accountId))),
+      // Cash isn't a holding, so a filtered view leaves it out.
+      cash: [],
     },
   };
 }

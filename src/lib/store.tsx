@@ -10,7 +10,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Account, Asset, ChatMessage, Txn, VaultData } from "./types";
+import { cashBalances } from "./cash";
+import type { Account, Asset, CashEntry, ChatMessage, Txn, VaultData } from "./types";
 import { createVault, saveVault, unlockVault, vaultExists, type OpenVault } from "./vault";
 
 type Status = "loading" | "new" | "locked" | "open";
@@ -34,8 +35,15 @@ interface Store {
   addAccount: (name: string) => Account;
   upsertAsset: (asset: Omit<Asset, "id">) => Asset;
   updateAsset: (id: string, patch: Partial<Asset>) => void;
-  addTxn: (txn: Omit<Txn, "id">) => void;
+  /**
+   * Records a trade. A sale always puts its money into cash; a buy takes it out of cash
+   * only when `fromCash` is set (never more than the cash there is).
+   */
+  addTxn: (txn: Omit<Txn, "id">, opts?: { fromCash?: boolean }) => void;
+  /** Deletes a trade and the cash it moved. */
   deleteTxn: (id: string) => void;
+  addCash: (entry: Omit<CashEntry, "id">) => void;
+  deleteCash: (id: string) => void;
   /** Updates the assistant conversation (kept in the vault), from the latest saved state. */
   setChat: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
   /** Adds many holdings to one broker in a single save. Returns the account id. */
@@ -137,9 +145,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const addTxn = useCallback(
-    (txn: Omit<Txn, "id">) => {
+    (txn: Omit<Txn, "id">, opts?: { fromCash?: boolean }) => {
       const d = dataRef.current;
-      commit({ ...d, txns: [...d.txns, { ...txn, id: uid() }] });
+      const id = uid();
+      const asset = d.assets.find((a) => a.id === txn.assetId);
+      const cash = [...(d.cash ?? [])];
+      const total = Math.round(txn.qty * txn.price * 100) / 100;
+      if (asset && !txn.opening && total > 0) {
+        if (txn.type === "sell") cash.push({ id: uid(), currency: asset.currency, amount: total, ts: txn.ts, kind: "sale", txnId: id });
+        else if (opts?.fromCash) {
+          const used = Math.min(total, cashBalances({ cash })[asset.currency]);
+          if (used > 0) cash.push({ id: uid(), currency: asset.currency, amount: -used, ts: txn.ts, kind: "buy", txnId: id });
+        }
+      }
+      commit({ ...d, txns: [...d.txns, { ...txn, id }], cash });
+    },
+    [commit],
+  );
+
+  const addCash = useCallback(
+    (entry: Omit<CashEntry, "id">) => {
+      const d = dataRef.current;
+      commit({ ...d, cash: [...(d.cash ?? []), { ...entry, id: uid() }] });
+    },
+    [commit],
+  );
+
+  const deleteCash = useCallback(
+    (id: string) => {
+      const d = dataRef.current;
+      commit({ ...d, cash: (d.cash ?? []).filter((e) => e.id !== id) });
     },
     [commit],
   );
@@ -149,7 +184,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const d = dataRef.current;
       const txns = d.txns.filter((t) => t.id !== id);
       const used = new Set(txns.map((t) => t.assetId));
-      commit({ ...d, txns, assets: d.assets.filter((a) => used.has(a.id)) });
+      const cash = (d.cash ?? []).filter((e) => e.txnId !== id);
+      commit({ ...d, txns, cash, assets: d.assets.filter((a) => used.has(a.id)) });
     },
     [commit],
   );
@@ -205,10 +241,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateAsset,
       addTxn,
       deleteTxn,
+      addCash,
+      deleteCash,
       setChat,
       applyImport,
     }),
-    [status, data, create, unlock, lock, addAccount, upsertAsset, updateAsset, addTxn, deleteTxn, setChat, applyImport],
+    [status, data, create, unlock, lock, addAccount, upsertAsset, updateAsset, addTxn, deleteTxn, addCash, deleteCash, setChat, applyImport],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

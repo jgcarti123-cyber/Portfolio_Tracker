@@ -14,6 +14,8 @@ export interface ParsedTrade {
   date: string | null;
   time: string | null;
   broker: string | null;
+  /** For a buy: whether they said it was paid from their cash, or with new money. */
+  paidFrom?: "cash" | "new" | null;
   understood: string;
   unclear: string | null;
 }
@@ -55,6 +57,9 @@ export function parseTradeLocally(text: string, brokers: string[], now = new Dat
 
   if (/\b(sold|sell|exit(ed)?|redeem(ed)?|withdr[ae]w|booked|bech(a|i|e|diya|di)?|bika|nikal(a|e|diya)?)\b/.test(t)) out.type = "sell";
   else if (/\b(bought|buy|added|add|invested|invest|purchased?|sip|put in|kharid(a|i|e|liya|li)?|liya|liye|dale|daale)\b/.test(t)) out.type = "buy";
+
+  if (/\b(from|using|with|out of)\s+(my\s+|the\s+)?(spare\s+|idle\s+)?(cash|balance|wallet)\b/.test(t)) out.paidFrom = "cash";
+  else if (/\b(new|fresh|extra)\s+(money|funds|cash)\b|\bfrom (my )?(bank|salary)\b/.test(t)) out.paidFrom = "new";
 
   if (/\b(all|everything|entire|whole|fully|complete(ly)?|sab|saare|sare|poora|pura)\b/.test(t)) out.quantityRule = "all";
   else if (/\bhalf\b/.test(t)) out.quantityRule = "half";
@@ -319,4 +324,42 @@ export function resolveTrade(r: ParsedTrade, c: TradeContext, assetCurrency: "IN
   if (!out.legs.some((l) => (l.qty ?? 0) > 0) && !out.problems.length) out.missing.push("quantity");
   if (!out.price && !(out.legs.some((l) => l.qty) && totalInAsset)) out.missing.push("price");
   return out;
+}
+
+/** Money added to or taken out of cash, read on this device ("added 10k to my Groww wallet"). */
+export interface ParsedCash {
+  direction: "add" | "withdraw";
+  amount: number;
+  currency: "INR" | "USD";
+  date: string | null;
+  note: string | null;
+}
+
+/**
+ * Reads a cash deposit or withdrawal from a sentence, or null when it isn't clearly one.
+ * Used when the AI answers without an action; questions and what-ifs are never read as one.
+ */
+export function parseCashLocally(text: string, brokers: string[] = [], now = new Date()): ParsedCash | null {
+  const t = ` ${text.toLowerCase().replace(/\s+/g, " ")} `;
+  if (/\?|\b(what if|if i|should|how much|how many|can i|would)\b/.test(t)) return null;
+  if (!/\b(cash|wallet|balance|funds?|money)\b/.test(t)) return null;
+  // A sale or purchase is a trade, not cash.
+  if (/\b(sold|sell|bought|buy|shares?|units?|coins?)\b/.test(t)) return null;
+  const direction = /\b(withdr[ae]w[na]?|withdrawing|took out|take out|taken out|pulled out|removed?|moved out|transferred out|nikal)/.test(t)
+    ? "withdraw"
+    : /\b(add(ed)?|put|deposit(ed)?|transferred|moved|topped up|top up|loaded|credited|dale|daale)\b/.test(t)
+      ? "add"
+      : null;
+  if (!direction) return null;
+  const m = t.match(/(₹|\$|rs\.?|inr|usd)?\s*([\d,]+(?:\.\d+)?)\s*(k|l|lakhs?|lacs?|cr|crores?|m)?\b\s*(rupees|rs|inr|dollars|usd|bucks)?/);
+  if (!m) return null;
+  const amt = amount(m[2], m[3] ?? "");
+  if (!(amt > 0)) return null;
+  const cur = /\$|usd|dollar|bucks/.test(`${m[1] ?? ""} ${m[4] ?? ""}`) || /\b(usd|dollars?)\b/.test(t) ? "USD" : "INR";
+  const d = new Date(now);
+  let date: string | null = null;
+  if (/\bday before yesterday\b/.test(t)) d.setDate(d.getDate() - 2), (date = ymd(d));
+  else if (/\b(yesterday|kal)\b/.test(t)) d.setDate(d.getDate() - 1), (date = ymd(d));
+  const broker = brokers.find((b) => t.includes(b.toLowerCase()) || t.includes(b.toLowerCase().replace(/money$/, " money")));
+  return { direction, amount: amt, currency: cur, date, note: broker ? `${broker} wallet` : null };
 }

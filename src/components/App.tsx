@@ -4,7 +4,8 @@ import { useCallback, useMemo, useState } from "react";
 import { activeCount, applyFilter, NO_FILTER, type Filter, type Sort } from "@/lib/filters";
 import { buildSeries, useCloses } from "@/lib/networth";
 import { todayMoves } from "@/lib/today";
-import { buildPositions, totals as sumTotals } from "@/lib/portfolio";
+import { cashBalances, cashTotal } from "@/lib/cash";
+import { buildPositions, totals as sumTotals, type Totals } from "@/lib/portfolio";
 import { useMarket } from "@/lib/prices";
 import { AiProvider } from "@/lib/ai";
 import { StoreProvider, useStore } from "@/lib/store";
@@ -14,6 +15,7 @@ import { AddHolding } from "./AddHolding";
 import { AiConsent } from "./AiConsent";
 import { Allocation } from "./Allocation";
 import { Assistant, Sparkle } from "./Assistant";
+import { CashCard } from "./Cash";
 import { AssetView } from "./AssetView";
 import { ActiveFilters, FilterButton } from "./FilterBar";
 import { Gate, Logo } from "./Gate";
@@ -65,16 +67,19 @@ function Portfolio() {
     () => applyFilter(positions, data, filter, currency, market.usdInr),
     [positions, data, filter, currency, market.usdInr],
   );
-  const totals = useMemo(
-    () => sumTotals(scoped.positions, currency, market.usdInr),
-    [scoped.positions, currency, market.usdInr],
-  );
+  const filtered = activeCount(filter) > 0;
+  // Cash counts towards net worth (as money in, so never a gain), except in a filtered view.
+  const cashNow = useMemo(() => cashTotal(cashBalances(data), currency, market.usdInr), [data, currency, market.usdInr]);
+  const withCash = useCallback((t: Totals): Totals => ({ ...t, value: t.value + cashNow, cost: t.cost + cashNow }), [cashNow]);
+  const totals = useMemo(() => {
+    const t = sumTotals(scoped.positions, currency, market.usdInr);
+    return filtered ? t : withCash(t);
+  }, [scoped.positions, currency, market.usdInr, filtered, withCash]);
   const series = useMemo(
     () => buildSeries(scoped.data, scoped.positions, closes, market, currency),
     [scoped, closes, market, currency],
   );
   const today = useMemo(() => todayMoves(scoped.positions, currency, market), [scoped.positions, currency, market]);
-  const filtered = activeCount(filter) > 0;
   const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const [assistOpen, setAssistOpen] = useState(false);
   const [view, setView] = useState<"dashboard" | "history">("dashboard");
@@ -84,14 +89,14 @@ function Portfolio() {
     if (!assistOpen) return null;
     if (!filtered) return { totals, today, series };
     return {
-      totals: sumTotals(positions, currency, market.usdInr),
+      totals: withCash(sumTotals(positions, currency, market.usdInr)),
       today: todayMoves(positions, currency, market),
       series: buildSeries(data, positions, closes, market, currency),
     };
-  }, [assistOpen, filtered, totals, today, series, positions, currency, market, data, closes]);
+  }, [assistOpen, filtered, totals, today, series, positions, currency, market, data, closes, withCash]);
 
   const openAsset = data.assets.find((a) => a.id === openId);
-  const empty = data.txns.length === 0;
+  const empty = data.txns.length === 0 && !(data.cash ?? []).length;
 
   return (
     <div className={`transition-[padding] duration-300 ${assistOpen ? "lg:pr-[400px]" : ""}`}>
@@ -217,6 +222,7 @@ function Portfolio() {
             ) : (
               <>
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                  <div className="flex min-w-0 flex-col gap-4">
                   <NetWorthChart
                     series={series}
                     totals={totals}
@@ -226,8 +232,10 @@ function Portfolio() {
                     filtered={filtered}
                     missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
                   />
+                  {!filtered && <CashCard currency={currency} usdInr={market.usdInr} onSaved={notify} />}
+                  </div>
                   <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
-                    <Allocation positions={scoped.positions} accounts={data.accounts} currency={currency} usdInr={market.usdInr} />
+                    <Allocation positions={scoped.positions} accounts={data.accounts} currency={currency} usdInr={market.usdInr} cash={filtered ? 0 : cashNow} />
                     <Highlights
                       series={series}
                       positions={scoped.positions}

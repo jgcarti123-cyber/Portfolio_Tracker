@@ -23,12 +23,16 @@ Answering:
 - Not a SEBI-registered adviser: never recommend buying/selling/holding anything specific or predict prices. For "should I…?" give the facts (weight, return, how long held, Indian tax basics: equity STCG under 1 year vs LTCG, crypto flat 30%), say it's their call, offer a what-if. You can't place broker orders.
 
 Actions (at most one):
-- "trade": they say they HAVE bought/sold. trade = only what they said: type buy|sell, quantity, quantityRule all|half|fraction (+fraction 0-1), keep (units kept, "all but 2"), pricePerUnit, priceRule market|avg|close, total (5k=5000, 1L=100000), totalCurrency INR|USD, date YYYY-MM-DD from today (null=today), time HH:MM, broker (one of the listed brokers). holdingId = matching id, or null with newHolding {query, assetType in_stock|us_stock|mf|crypto} if not held. Never compute "everything" yourself. Reply e.g. "Got it — check it and confirm:". If ambiguous which holding, ask instead.
+- "trade": they say they HAVE bought/sold. trade = only what they said: type buy|sell, quantity, quantityRule all|half|fraction (+fraction 0-1), keep (units kept, "all but 2"), pricePerUnit, priceRule market|avg|close, total (5k=5000, 1L=100000), totalCurrency INR|USD, date YYYY-MM-DD from today (null=today), time HH:MM, broker (one of the listed brokers), paidFrom cash|new only if they said whether a buy used their cash. holdingId = matching id, or null with newHolding {query, assetType in_stock|us_stock|mf|crypto} if not held. Never compute "everything" yourself. Reply e.g. "Got it — check it and confirm:". If ambiguous which holding, ask instead.
 - "whatif": hypotheticals. One of: (a) holdingId + trade ("what if I buy 5 more at 1100", "if I sold half"); (b) priceChangePct + scope {holdingIds or assetType, or null = whole portfolio} ("what if crypto falls 20%"); (c) holdingId + targetAvgPrice (+ optional trade.pricePerUnit) for "how much should I buy to get my average below X" — the app works out the units. Reply with a short lead-in.
+
+- "cash": they added money to or took money out of their cash (not a trade). direction add|withdraw, amount, currency INR|USD, date (null=today), note (e.g. broker wallet). Sales go into cash automatically; never use this for a sale.
+
+A "trade" or "cash" action shows a card the person must confirm: say "check it and confirm", never claim it's saved or give new balances. Lines in [brackets] in earlier messages are notes from the app; never write them yourself.
 
 Also 2–3 short follow-up questions in their voice.
 
-JSON only: {"reply":"...","action":null|{"type":"trade","holdingId":"h1"|null,"newHolding":null|{"query":"","assetType":""},"trade":{...}}|{"type":"whatif","holdingId":"h1"|null,"trade":{...}|null,"priceChangePct":null,"targetAvgPrice":null,"scope":null|{"holdingIds":[],"assetType":null}},"suggestions":["..."]}`;
+JSON only: {"reply":"...","action":null|{"type":"trade","holdingId":"h1"|null,"newHolding":null|{"query":"","assetType":""},"trade":{...}}|{"type":"whatif","holdingId":"h1"|null,"trade":{...}|null,"priceChangePct":null,"targetAvgPrice":null,"scope":null|{"holdingIds":[],"assetType":null}}|{"type":"cash","direction":"add","amount":0,"currency":"INR","date":null,"note":""},"suggestions":["..."]}`;
 
 const TYPES = ["in_stock", "us_stock", "mf", "crypto"] as const;
 const num = (v: unknown) => (typeof v === "number" && isFinite(v) ? v : null);
@@ -54,10 +58,12 @@ function compact(c: Rec, maxTrades: number) {
   const hi = (h.highest ?? null) as Rec | null;
   const holdings = Array.isArray(c.holdings) ? (c.holdings as Rec[]) : [];
   const trades = Array.isArray(c.trades) ? (c.trades as Rec[]) : [];
+  const cash = (c.cash ?? {}) as Rec;
   const lines = [
     `Today ${c.today} (${c.weekday}). Display currency ${c.displayCurrency}. $1 = ₹${n(c.usdInr)}. Brokers: ${(Array.isArray(c.brokers) ? c.brokers : []).join(", ")}.`,
     `TOTALS net worth ${n(t.netWorth, 0)} | invested ${n(t.invested, 0)} | return ${n(t.returnAmount, 0)} (${n(t.returnPct)}%) | today ${n(t.todayChange)} (${n(t.todayPct)}%), ${t.holdingsUpToday} up, ${t.holdingsDownToday} down | currency effect today ${n(t.currencyEffectToday)}`,
     `HISTORY tracked since ${h.trackedSince ?? "-"} | 7 days ago ${n(h.netWorth7DaysAgo, 0)} | 30 days ago ${n(h.netWorth30DaysAgo, 0)} | highest ${hi ? `${n(hi.value, 0)} on ${hi.date}` : "-"}`,
+    `CASH (counts in net worth, never a gain; sales add to it) ₹${n(cash.INR, 0)} | $${n(cash.USD, 2)} | total ${n(cash.total, 0)} | recent ${list(cash.recent, (r) => `${r.date} ${r.kind} ${n(r.amount, 2)} ${r.ccy}`, 8)}`,
     `BY TYPE ${list(c.byType, (r) => `${r.name} ${n(r.value, 0)} (${n(r.weightPct, 1)}%)`)}`,
     `BY BROKER ${list(c.byBroker, (r) => `${r.name} ${n(r.value, 0)} (${n(r.weightPct, 1)}%)`)}`,
     `DOWN TODAY ${list(c.downToday, (r) => `${short(r.name, 32)} ${n(r.change)} (${n(r.pricePct)}%)`, 12)}`,
@@ -111,6 +117,7 @@ function cleanTrade(t: Rec | null | undefined, today: string, brokers: string[])
     date,
     time: typeof t.time === "string" && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
     broker,
+    paidFrom: oneOf(t.paidFrom, ["cash", "new"] as const),
     understood: "",
     unclear: null,
   };
@@ -158,6 +165,11 @@ export async function POST(req: Request) {
       const nh = a.newHolding as Rec | null;
       const newHolding = !hid(a.holdingId) && nh && typeof nh.query === "string" ? { query: str(nh.query, 80), assetType: oneOf(nh.assetType, TYPES) } : null;
       if (trade && (hid(a.holdingId) || newHolding)) action = { type: "trade", holdingId: hid(a.holdingId), newHolding, trade };
+    } else if (a && a.type === "cash") {
+      const amount = pos(a.amount);
+      const direction = oneOf(a.direction, ["add", "withdraw"] as const);
+      const date = typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date) && a.date <= today ? a.date : null;
+      if (amount && direction) action = { type: "cash", direction, amount, currency: oneOf(a.currency, ["INR", "USD"] as const) ?? "INR", date, note: str(a.note, 60) || null };
     } else if (a && a.type === "whatif") {
       const scope = (a.scope ?? {}) as Rec;
       action = {
@@ -176,7 +188,8 @@ export async function POST(req: Request) {
     }
 
     return Response.json({
-      reply: str(reply.reply, 3000) || "Sorry, I couldn't put that together. Could you rephrase?",
+      // Drop any imitation of the app's own "[Recorded: …]" notes.
+      reply: str(reply.reply, 3000).replace(/\s*\[(Recorded|Showed|The person)[^\]]*\]/g, "").trim() || "Sorry, I couldn't put that together. Could you rephrase?",
       action,
       suggestions: (Array.isArray(reply.suggestions) ? reply.suggestions : []).map((s: unknown) => str(s, 80)).filter(Boolean).slice(0, 3),
     });

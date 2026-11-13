@@ -135,10 +135,12 @@ body {
   transition: background-color 0.3s, color 0.3s;
 }
 
+/* The longhand only picks nicer line breaks; the `text-wrap` shorthand would also turn
+   wrapping back on and break `truncate`. */
 h1,
 h2,
 p {
-  text-wrap: pretty;
+  text-wrap-style: pretty;
 }
 
 .num {

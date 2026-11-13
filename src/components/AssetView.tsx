@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dateTime, money, pct, price as fmtPrice, qty, signed } from "@/lib/format";
 import { isOpening, type Position } from "@/lib/portfolio";
 import { fetchHistory } from "@/lib/prices";
@@ -9,7 +9,7 @@ import { useTheme } from "@/lib/theme";
 import { CLASS_META, type Asset, type Candle, type Currency, type Range, type Txn } from "@/lib/types";
 import { AddTrade } from "./AddTrade";
 import { AssetBadge } from "./Holdings";
-import { PriceChart, type ChartPoint, type ChartTrade } from "./PriceChart";
+import { PriceChart, type ChartControls, type ChartPoint, type ChartTrade } from "./PriceChart";
 import { ExternalIcon, TradingViewChart, tvEmbeddable, tvSymbol, tvUrl } from "./TradingView";
 import { Button, Card, CardHead, Delta, Icon, Segmented, useAnimatedNumber } from "./ui";
 
@@ -52,6 +52,8 @@ export function AssetView({
   const [manual, setManual] = useState("");
   const [point, setPoint] = useState<ChartPoint | null>(null);
   const [loadingRange, setLoadingRange] = useState(false);
+  const chartControls = useRef<ChartControls | null>(null);
+  const [zoomed, setZoomed] = useState(false);
   const [source, setSource] = useState<"folio" | "tv">("folio");
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -158,7 +160,20 @@ export function AssetView({
           {asset.symbol ? (
             <>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                {source === "folio" ? <Segmented options={RANGES} value={range} onChange={setRange} label="Chart range" size="sm" /> : <span className="text-xs text-ink-3">TradingView&apos;s chart — your trades aren&apos;t drawn here</span>}
+                {source === "folio" ? (
+                  <div className="flex items-center gap-2">
+                    <Segmented options={RANGES} value={range} onChange={setRange} label="Chart range" size="sm" />
+                    {candles?.length ? (
+                      <div className="flex items-center rounded-full bg-sunken p-0.5 ring-1 ring-line" role="group" aria-label="Zoom">
+                        <ZoomBtn label="Zoom out" onClick={() => chartControls.current?.zoomOut()} d="M3.5 7h7" />
+                        <ZoomBtn label="Zoom in" onClick={() => chartControls.current?.zoomIn()} d="M3.5 7h7M7 3.5v7" />
+                        {zoomed && <ZoomBtn label="Reset zoom" onClick={() => chartControls.current?.reset()} d="M3 7a4 4 0 1 0 1.2-2.85M3 2.5v2.5h2.5" />}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-xs text-ink-3">TradingView&apos;s chart — your trades aren&apos;t drawn here</span>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   {source === "folio" && !lineOnly && (
                     <Segmented
@@ -206,8 +221,11 @@ export function AssetView({
                       avgCost={position && position.qty > 0 ? position.avgPrice : null}
                       trades={chartTrades}
                       theme={theme}
+                      currency={cur}
                       onHover={setPoint}
                       onTradeClick={showTrade}
+                      controlsRef={chartControls}
+                      onZoomedChange={setZoomed}
                       height="100%"
                     />
                   </div>
@@ -380,13 +398,13 @@ function OnThisDay({
 
   return (
     <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-line ring-1 ring-line sm:grid-cols-4" aria-live="polite">
-      <Stat label={now ? "Price now · point at the chart for any day" : "On this day"} value={label} sub={price > 0 ? `${fmtPrice(price, cur)} each` : "no live price"} />
+      <Stat label={now ? "Price now" : "On this day"} value={label} sub={price > 0 ? `${fmtPrice(price, cur)} each` : "no live price"} />
       <Stat
         label="You held"
         value={q > 0 ? `${qty(q)} ${unit}` : txns.some((t) => t.ts <= ts) ? "Nothing" : "None yet"}
         sub={q > 0 ? `cost ${money(cost, cur)}` : txns.some((t) => t.ts <= ts) ? "you'd sold it all" : "before your first buy"}
       />
-      <Stat label="Your holding was worth" value={q > 0 ? money(shownValue, cur) : "–"} sub={q > 0 && !now && position?.value ? `${pct((value / position.value - 1) * 100)} vs today` : now ? "live" : ""} />
+      <Stat label={now ? "Holding worth" : "Holding worth then"} value={q > 0 ? money(shownValue, cur) : "–"} sub={q > 0 && !now && position?.value ? `${pct((value / position.value - 1) * 100)} vs today` : now ? "live" : ""} />
       <Stat
         label={gain >= 0 ? "Your gain then" : "Your loss then"}
         value={q > 0 ? signed(shownGain, cur) : "–"}
@@ -402,7 +420,7 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub: 
     <div className="min-w-0 bg-surface px-3.5 py-3">
       <p className="truncate text-[11px] text-ink-3">{label}</p>
       <p className={`num mt-0.5 truncate text-[14px] font-bold ${tone === undefined ? "" : tone > 0 ? "text-up" : tone < 0 ? "text-down" : ""}`}>{value}</p>
-      <p className={`num truncate text-[11px] ${tone === undefined ? "text-ink-3" : tone > 0 ? "text-up" : tone < 0 ? "text-down" : "text-ink-3"}`}>{sub || " "}</p>
+      <p className={`num truncate text-[11px] ${tone === undefined ? "text-ink-3" : tone > 0 ? "text-up" : tone < 0 ? "text-down" : "text-ink-3"}`}>{sub || " "}</p>
     </div>
   );
 }
@@ -539,5 +557,15 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
       <dt className="text-ink-2">{label}</dt>
       <dd className={strong ? "text-base font-extrabold" : "font-semibold"}>{value}</dd>
     </div>
+  );
+}
+
+function ZoomBtn({ label, onClick, d }: { label: string; onClick: () => void; d: string }) {
+  return (
+    <button type="button" aria-label={label} title={label} onClick={onClick} className="pop-in grid size-7 place-items-center rounded-full text-ink-2 transition-colors hover:bg-surface hover:text-ink">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d={d} />
+      </svg>
+    </button>
   );
 }

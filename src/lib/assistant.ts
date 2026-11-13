@@ -1,4 +1,5 @@
 import type { DayValue } from "./networth";
+import { cashBalances, cashTotal } from "./cash";
 import { convert, type Position, type Totals } from "./portfolio";
 import type { Today } from "./today";
 import { CLASS_META, type Currency, type VaultData } from "./types";
@@ -141,6 +142,18 @@ export function buildContext({
       netWorth30DaysAgo: at(30) !== undefined ? r2(at(30)!) : null,
       highest: peak ? { value: r2(peak.value), date: day(peak.ts) } : null,
     },
+    cash: (() => {
+      const b = cashBalances(data);
+      return {
+        INR: r2(b.INR),
+        USD: r2(b.USD),
+        total: r2(cashTotal(b, currency, usdInr)),
+        recent: [...(data.cash ?? [])]
+          .sort((x, y) => y.ts - x.ts)
+          .slice(0, 8)
+          .map((e) => ({ date: day(e.ts), kind: e.kind, amount: r2(e.amount), ccy: e.currency })),
+      };
+    })(),
     byType: group((p) => [CLASS_META[p.asset.cls].label]),
     byBroker,
     // Explicit lists so the model never has to read signs to know what rose or fell.

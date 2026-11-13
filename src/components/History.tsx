@@ -2,12 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { money, price as fmtPrice, qty as fmtQty, signed } from "@/lib/format";
+import { CASH_COLOR, CASH_LABEL } from "@/lib/cash";
 import { convert, isOpening } from "@/lib/portfolio";
-import { CLASS_META, type Currency, type Txn, type VaultData } from "@/lib/types";
+import { CLASS_META, type CashEntry, type Currency, type Txn, type VaultData } from "@/lib/types";
 import { AssetBadge } from "./AssetBadge";
 import { Card, Icon, Segmented } from "./ui";
 
-type Kind = "all" | "buy" | "sell";
+type Kind = "all" | "buy" | "sell" | "cash";
+/** One line in the list: a trade, or cash added or taken out by hand. */
+type Item = { ts: number; row?: Row; cash?: CashEntry };
 
 interface Row {
   t: Txn;
@@ -75,11 +78,21 @@ export function History({
   const accName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "Other";
   const disp = (t: Txn, n: number) => convert(n, asset(t.assetId)?.currency ?? currency, currency, usdInr);
 
-  const shown = all.filter((r) => {
+  // Cash a trade moved, shown on that trade's line.
+  const cashOf = useMemo(() => new Map((data.cash ?? []).filter((e) => e.txnId).map((e) => [e.txnId!, e])), [data.cash]);
+  const s = q.trim().toLowerCase();
+  const cashItems: Item[] =
+    kind === "buy" || kind === "sell" || broker
+      ? []
+      : (data.cash ?? [])
+          .filter((e) => (e.kind === "added" || e.kind === "withdrawn") && (!s || (e.note ?? "").toLowerCase().includes(s) || "cash".includes(s)))
+          .map((e) => ({ ts: e.ts, cash: e }));
+
+  const shownTrades = all.filter((r) => {
+    if (kind === "cash") return false;
     if (!showAdded && r.opening) return false;
     if (kind !== "all" && (r.opening || r.t.type !== kind)) return false;
     if (broker && r.t.accountId !== broker) return false;
-    const s = q.trim().toLowerCase();
     if (s) {
       const a = asset(r.t.assetId);
       if (![a?.name, a?.ticker].some((x) => x?.toLowerCase().includes(s))) return false;
@@ -87,18 +100,21 @@ export function History({
     return true;
   });
 
+  const shown: Item[] = [...shownTrades.map((r) => ({ ts: r.t.ts, row: r })), ...cashItems].sort((a, b) => b.ts - a.ts);
+
   // Summary over the real trades in view (opening entries aren't money moving that day).
-  const trades = shown.filter((r) => !r.opening);
+  const trades = shownTrades.filter((r) => !r.opening);
+  const cashNet = cashItems.reduce((sum, i) => sum + convert(i.cash!.amount, i.cash!.currency, currency, usdInr), 0);
   const bought = trades.filter((r) => r.t.type === "buy").reduce((s, r) => s + disp(r.t, r.t.qty * r.t.price), 0);
   const sold = trades.filter((r) => r.t.type === "sell").reduce((s, r) => s + disp(r.t, r.t.qty * r.t.price), 0);
   const realised = trades.reduce((s, r) => s + (r.gain !== null ? disp(r.t, r.gain) : 0), 0);
 
-  const groups: { key: string; ts: number; items: Row[] }[] = [];
-  for (const r of shown.slice(0, limit)) {
-    const k = dayKey(r.t.ts);
+  const groups: { key: string; ts: number; items: Item[] }[] = [];
+  for (const it of shown.slice(0, limit)) {
+    const k = dayKey(it.ts);
     const g = groups.at(-1);
-    if (g && g.key === k) g.items.push(r);
-    else groups.push({ key: k, ts: r.t.ts, items: [r] });
+    if (g && g.key === k) g.items.push(it);
+    else groups.push({ key: k, ts: it.ts, items: [it] });
   }
   const brokers = data.accounts.filter((a) => data.txns.some((t) => t.accountId === a.id));
 
@@ -110,7 +126,7 @@ export function History({
             <h1 className="text-[22px] font-extrabold tracking-tight">History</h1>
             <p className="mt-1 text-[13px] text-ink-2">Every buy and sell across your brokers, newest first.</p>
           </div>
-          <dl className="num grid grid-cols-3 gap-5 text-right text-[13px]">
+          <dl className={`num grid gap-5 text-right text-[13px] ${cashItems.length ? "grid-cols-4" : "grid-cols-3"}`}>
             <div>
               <dt className="text-[11px] text-ink-3">Bought</dt>
               <dd className="font-bold">{money(bought, currency, { decimals: 0 })}</dd>
@@ -123,6 +139,12 @@ export function History({
               <dt className="text-[11px] text-ink-3">Realised gain</dt>
               <dd className={`font-bold ${realised > 0 ? "text-up" : realised < 0 ? "text-down" : ""}`}>{signed(realised, currency)}</dd>
             </div>
+            {cashItems.length > 0 && (
+              <div>
+                <dt className="text-[11px] text-ink-3">Cash added</dt>
+                <dd className="font-bold">{signed(cashNet, currency)}</dd>
+              </div>
+            )}
           </dl>
         </div>
 
@@ -132,6 +154,7 @@ export function History({
               { value: "all", label: "All" },
               { value: "buy", label: "Bought" },
               { value: "sell", label: "Sold" },
+              { value: "cash", label: "Cash" },
             ]}
             value={kind}
             onChange={setKind}
@@ -172,7 +195,11 @@ export function History({
       ) : (
         <Card className="p-2 sm:p-3">
           {groups.map((g) => {
-            const net = g.items.filter((r) => !r.opening).reduce((s, r) => s + (r.t.type === "sell" ? 1 : -1) * disp(r.t, r.t.qty * r.t.price), 0);
+            const net = g.items.reduce((sum, it) => {
+              if (it.cash) return sum + convert(it.cash.amount, it.cash.currency, currency, usdInr);
+              const r = it.row!;
+              return r.opening ? sum : sum + (r.t.type === "sell" ? 1 : -1) * disp(r.t, r.t.qty * r.t.price);
+            }, 0);
             return (
               <section key={g.key} className="py-1">
                 <header className="sticky top-[64px] z-10 flex items-center justify-between rounded-xl bg-surface/90 px-3 py-2 backdrop-blur">
@@ -185,8 +212,11 @@ export function History({
                   )}
                 </header>
                 <ul>
-                  {g.items.map((r, i) => {
+                  {g.items.map((it, i) => {
+                    if (it.cash) return <CashLine key={it.cash.id} e={it.cash} i={i} currency={currency} usdInr={usdInr} />;
+                    const r = it.row!;
                     const a = asset(r.t.assetId);
+                    const moved = cashOf.get(r.t.id);
                     if (!a) return null;
                     const cur = a.currency;
                     const total = r.t.qty * r.t.price;
@@ -219,6 +249,7 @@ export function History({
                               {r.opening ? `avg ${fmtPrice(r.t.price, cur)}` : `at ${fmtPrice(r.t.price, cur)}`} · {accName(r.t.accountId)}
                               {r.opening ? ` · ${r.t.via ? `from ${r.t.via}` : "added to Folio"}` : ` · ${new Date(r.t.ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`}
                               {r.t.via === "Ask Folio" && " · via Ask Folio"}
+                              {moved && ` · ${money(Math.abs(moved.amount), moved.currency)} ${moved.amount > 0 ? "to" : "from"} cash`}
                             </span>
                           </span>
                           <span className="num shrink-0 text-right">
@@ -250,5 +281,33 @@ export function History({
         </Card>
       )}
     </div>
+  );
+}
+
+function CashLine({ e, i, currency, usdInr }: { e: CashEntry; i: number; currency: Currency; usdInr: number }) {
+  const add = e.amount > 0;
+  return (
+    <li>
+      <div className="item-in flex w-full items-center gap-3 rounded-2xl px-3 py-2.5" style={{ animationDelay: `${Math.min(i, 10) * 25}ms` }}>
+        <span className="grid size-9 shrink-0 place-items-center rounded-full text-white" style={{ background: CASH_COLOR }} aria-hidden>
+          {Icon.wallet}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-semibold">{e.note || CASH_LABEL[e.kind]}</span>
+          <span className="num block truncate text-xs text-ink-3">
+            {e.note ? `${CASH_LABEL[e.kind]} · ` : ""}
+            {new Date(e.ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+            {e.via ? ` · via ${e.via}` : ""}
+          </span>
+        </span>
+        <span className="num shrink-0 text-right">
+          <span className={`block text-[14px] font-bold ${add ? "text-up" : ""}`}>
+            {add ? "+" : "−"}
+            {money(Math.abs(e.amount), e.currency)}
+          </span>
+          {e.currency !== currency && <span className="block text-xs text-ink-3">{money(convert(Math.abs(e.amount), e.currency, currency, usdInr), currency)}</span>}
+        </span>
+      </div>
+    </li>
   );
 }

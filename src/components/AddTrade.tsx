@@ -6,6 +6,7 @@ import { money, pct, price as fmtPrice, qty as fmtQty, signed, toLocalInput } fr
 import { closeAt } from "@/lib/networth";
 import { convert, replay } from "@/lib/portfolio";
 import { fetchHistory } from "@/lib/prices";
+import { cashBalances } from "@/lib/cash";
 import { useStore } from "@/lib/store";
 import { heldHistory, parseTradeLocally, resolveTrade, type ParsedTrade, type PriceFrom, type ResolvedTrade } from "@/lib/tradeText";
 import { CLASS_META, type Asset, type Candle, type Currency } from "@/lib/types";
@@ -67,6 +68,8 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
   const [text, setText] = useState("");
   const [lastRead, setLastRead] = useState("");
   const [typeChosen, setTypeChosen] = useState(false);
+  /** For a buy when there's cash: was it paid from cash or with new money? Always asked. */
+  const [funding, setFunding] = useState<"cash" | "new" | null>(null);
   const [reading, setReading] = useState<{ state: "idle" | "busy" | "done"; by?: "ai" | "device"; note?: string; unclear?: string | null; resolved?: ResolvedTrade }>({ state: "idle" });
   const closesRef = useRef<Promise<Candle[]> | null>(null);
   const [closes, setCloses] = useState<Candle[]>([]);
@@ -227,6 +230,7 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
       live.fx,
     );
     apply(resolved);
+    if (r.paidFrom) setFunding(r.paidFrom);
     setReading({ state: "done", by, note, unclear: r.unclear && resolved.missing.length ? r.unclear : null, resolved });
   }
 
@@ -239,6 +243,9 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
   const realised = type === "sell" && valid && avg ? q * (p - avg) : null;
   const closesAll = type === "sell" && valid && activeLegs.every((l) => near(l.qty, heldAt(l.accountId))) && near(q, held.qty);
   const pending = text.trim() !== "" && text.trim() !== lastRead;
+  const cashHere = cashBalances(data)[cur];
+  const askFunding = type === "buy" && cashHere > 0;
+  const fromCash = askFunding && funding === "cash" ? Math.min(cashHere, valid ? q * p : 0) : 0;
 
   function problemFor(l: Leg) {
     const h = heldAt(l.accountId);
@@ -252,6 +259,7 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
     if (!(p > 0) || !isFinite(p)) return setError("Enter the price per unit, or the total.");
     if (!isFinite(ts) || ts > clock() + 60_000) return setError("That date is in the future.");
     if (legProblem) return setError(problemFor(legProblem));
+    if (askFunding && !funding) return setError("Say whether you paid from your cash or with new money.");
     if (type === "sell") {
       // Trades replay in date order: a sale before Folio's record of the purchase wouldn't count.
       const d = ymd(new Date(ts));
@@ -270,7 +278,7 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
     for (const l of activeLegs) {
       // Selling (almost exactly) everything closes the position, without leaving rounding dust.
       const units = type === "sell" && near(l.qty, heldAt(l.accountId)) ? heldAt(l.accountId) : l.qty;
-      addTxn({ assetId: asset.id, accountId: l.accountId, type, qty: units, price: p, ts, opening: false });
+      addTxn({ assetId: asset.id, accountId: l.accountId, type, qty: units, price: p, ts, opening: false }, { fromCash: askFunding && funding === "cash" });
     }
     onSaved?.(type === "buy" ? "Purchase added" : "Sale added");
     onClose();
@@ -292,6 +300,22 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
 
   const showCard = reading.state === "done" && !pending;
   const missing = showCard ? [...(reading.resolved?.missing ?? [])].filter((m) => (m === "quantity" ? !(q > 0) : m === "price" ? !(p > 0) : m === "type" ? !reading.resolved?.type && !typeChosen : true)) : [];
+  const fundingChips = (
+    <>
+      <button type="button" className={chip(funding === "cash")} onClick={() => (setFunding("cash"), setError(""))}>
+        From my cash ({money(cashHere, cur)})
+      </button>
+      <button type="button" className={chip(funding === "new")} onClick={() => (setFunding("new"), setError(""))}>
+        New money
+      </button>
+    </>
+  );
+  const fundingNote =
+    funding === "cash" && valid
+      ? fromCash < q * p
+        ? `${money(fromCash, cur)} comes out of cash (all of it); the other ${money(q * p - fromCash, cur)} counts as new money.`
+        : `${money(fromCash, cur)} comes out of cash, leaving ${money(cashHere - fromCash, cur)}.`
+      : null;
 
   return (
     <Modal title="Add a trade" onClose={onClose}>
@@ -403,6 +427,18 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
               </p>
             )}
 
+            {type === "sell" && valid && !legProblem && (
+              <p className="num border-t border-line bg-surface px-4 py-2.5 text-xs text-ink-2">
+                <b className="text-ink">{money(q * p, cur)}</b> goes into your cash.
+              </p>
+            )}
+            {askFunding && (
+              <div className="border-t border-line bg-surface px-4 py-3.5">
+                <Ask q="Where did the money come from?">{fundingChips}</Ask>
+                {fundingNote && <p className="num mt-1.5 text-[11px] text-ink-3">{fundingNote}</p>}
+              </div>
+            )}
+
             {/* Only what's genuinely missing is asked */}
             {(missing.length > 0 || legProblem) && (
               <div className="space-y-2.5 border-t border-line bg-surface px-4 py-3.5">
@@ -455,7 +491,7 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
             )}
 
             <div className="flex flex-wrap items-center gap-2 border-t border-line bg-surface px-4 py-3">
-              <Button onClick={commit} disabled={!valid || !!legProblem || missing.length > 0} className="flex-1">
+              <Button onClick={commit} disabled={!valid || !!legProblem || missing.length > 0 || (askFunding && !funding)} className="flex-1">
                 Confirm and save
               </Button>
               <Button variant="quiet" onClick={() => fieldsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}>
@@ -615,6 +651,17 @@ export function AddTrade({ asset, onClose, onSaved }: { asset: Asset; onClose: (
             </div>
             {legs && <p className="mt-1.5 text-[11px] text-ink-3">Selling at each broker where you hold it. Tap one broker to sell only there.</p>}
           </div>
+
+          {askFunding && !showCard && (
+            <div>
+              <p className="mb-1.5 text-[13px] font-semibold">Paid from</p>
+              <div className="flex flex-wrap gap-1.5">{fundingChips}</div>
+              {fundingNote && <p className="num mt-1.5 text-[11px] text-ink-3">{fundingNote}</p>}
+            </div>
+          )}
+          {type === "sell" && !showCard && valid && (
+            <p className="num text-[12px] text-ink-3">The {money(q * p, cur)} you receive goes into your cash.</p>
+          )}
 
           {error && (
             <p role="alert" className="text-[13px] font-semibold text-down">

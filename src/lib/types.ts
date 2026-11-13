@@ -55,7 +55,7 @@ export interface Txn {
 
 /** A card the assistant showed inside a reply: a trade to confirm, or a what-if result. */
 export interface ChatCard {
-  kind: "trade" | "whatif";
+  kind: "trade" | "whatif" | "cash";
   status?: "pending" | "saved" | "cancelled";
   /** What was saved, in words, once confirmed. */
   saved?: string;
@@ -71,10 +71,28 @@ export interface ChatMessage {
   suggestions?: string[];
 }
 
+/**
+ * A movement of cash, kept per currency. Positive = cash in (money added, a sale),
+ * negative = cash out (a withdrawal, a buy paid from cash).
+ */
+export interface CashEntry {
+  id: string;
+  currency: Currency;
+  amount: number;
+  ts: number;
+  kind: "added" | "withdrawn" | "sale" | "buy";
+  /** The trade that moved it, for "sale" and "buy". */
+  txnId?: string;
+  note?: string;
+  via?: string;
+}
+
 export interface VaultData {
   accounts: Account[];
   assets: Asset[];
   txns: Txn[];
+  /** Cash ledger. Started empty: sales recorded before cash existed don't count. */
+  cash?: CashEntry[];
   /** Conversation with the assistant, kept inside the encrypted vault. */
   chat?: ChatMessage[];
 }

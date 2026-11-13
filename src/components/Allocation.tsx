@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CASH_COLOR } from "@/lib/cash";
 import { money } from "@/lib/format";
 import { convert, type Position } from "@/lib/portfolio";
 import { ACCOUNT_COLORS, CLASS_META, CLASS_ORDER, type Account, type Currency } from "@/lib/types";
@@ -19,16 +20,22 @@ export function Allocation({
   accounts,
   currency,
   usdInr,
+  cash = 0,
 }: {
   positions: Position[];
   accounts: Account[];
   currency: Currency;
   usdInr: number;
+  /** Cash in the display currency; its own slice in either grouping (it isn't held at a broker). */
+  cash?: number;
 }) {
   const [mode, setMode] = useState<Mode>("class");
   const [hover, setHover] = useState<string | null>(null);
 
   const slices = useMemo<Slice[]>(() => {
+    const cashSlice: Slice[] = cash > 0 ? [{ key: "cash", label: "Cash", color: CASH_COLOR, value: cash }] : [];
+    return [...holdingSlices(), ...cashSlice];
+    function holdingSlices(): Slice[] {
     const worth = (p: Position) => convert(p.value ?? p.cost, p.asset.currency, currency, usdInr);
     if (mode === "class") {
       return CLASS_ORDER.map((cls) => ({
@@ -50,7 +57,8 @@ export function Allocation({
         ),
       }))
       .filter((s) => s.value > 0);
-  }, [positions, accounts, currency, usdInr, mode]);
+    }
+  }, [positions, accounts, currency, usdInr, mode, cash]);
 
   const total = slices.reduce((s, x) => s + x.value, 0);
 

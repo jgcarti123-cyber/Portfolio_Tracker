@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAi } from "@/lib/ai";
+import { cashBalances } from "@/lib/cash";
 import { buildContext, holdingIdMap } from "@/lib/assistant";
 import { money, pct, price as fmtPrice, qty as fmtQty, signed } from "@/lib/format";
 import type { DayValue } from "@/lib/networth";
@@ -10,10 +11,10 @@ import { convert, replay, type Position, type Totals } from "@/lib/portfolio";
 import { fetchHistory, searchAssets } from "@/lib/prices";
 import { useStore } from "@/lib/store";
 import type { Today } from "@/lib/today";
-import { heldHistory, resolveTrade, type ParsedTrade } from "@/lib/tradeText";
+import { heldHistory, parseCashLocally, resolveTrade, type ParsedTrade } from "@/lib/tradeText";
 import { CLASS_META, quoteKey, type Asset, type AssetClass, type Candle, type ChatCard, type ChatMessage, type Currency, type Quote, type SearchHit } from "@/lib/types";
 import { AssetBadge } from "./AssetBadge";
-import { Button } from "./ui";
+import { Button, Icon } from "./ui";
 
 const uid = () => crypto.randomUUID();
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -144,7 +145,7 @@ export function Assistant(props: Props) {
         role: m.role,
         content:
           m.text +
-          (m.card ? (m.card.status === "saved" ? `\n[Recorded: ${m.card.saved}]` : m.card.status === "cancelled" ? "\n[The person cancelled that card.]" : m.card.kind === "trade" ? "\n[Showed a trade for the person to confirm.]" : "\n[Showed a what-if card.]") : ""),
+          (m.card ? (m.card.status === "saved" ? `\n[Recorded: ${m.card.saved}]` : m.card.status === "cancelled" ? "\n[The person cancelled that card.]" : m.card.kind === "trade" ? "\n[Showed a trade for the person to confirm.]" : m.card.kind === "cash" ? "\n[Showed a cash entry for the person to confirm.]" : "\n[Showed a what-if card.]") : ""),
       }));
       const res = await fetch("/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ context, messages: history }) });
       const json = await res.json();
@@ -153,6 +154,12 @@ export function Assistant(props: Props) {
       const a = json.action as Record<string, unknown> | null;
       let card: ChatCard | undefined;
       if (a?.type === "trade") card = { kind: "trade", status: "pending", payload: { assetId: ids.get(a.holdingId as string) ?? null, newHolding: a.newHolding, trade: a.trade } };
+      if (a?.type === "cash") card = { kind: "cash", status: "pending", payload: { direction: a.direction, amount: a.amount, currency: a.currency, date: a.date ?? null, note: a.note ?? null } };
+      // The AI sometimes answers in words only; a clear cash deposit or withdrawal is still offered as a card.
+      if (!a) {
+        const c = parseCashLocally(q, data.accounts.map((x) => x.name));
+        if (c) card = { kind: "cash", status: "pending", payload: { ...c } };
+      }
       if (a?.type === "whatif") {
         const scope = (a.scope ?? {}) as { holdingIds?: string[] | null; assetType?: AssetClass | null };
         card = {
@@ -272,6 +279,7 @@ export function Assistant(props: Props) {
                   <div key={m.id} className="item-in space-y-2">
                     <Bubble role={m.role}>{m.role === "assistant" ? <Rich text={m.text} /> : m.text}</Bubble>
                     {m.card?.kind === "trade" && <TradeCard card={m.card} positions={positions} currency={currency} usdInr={usdInr} onUpdate={(p) => updateCard(m.id, p)} onSaved={props.onSaved} />}
+                    {m.card?.kind === "cash" && <CashActionCard card={m.card} onUpdate={(p) => updateCard(m.id, p)} onSaved={props.onSaved} />}
                     {m.card?.kind === "whatif" && <WhatIfCard card={m.card} positions={positions} totals={totals} currency={currency} usdInr={usdInr} />}
                   </div>
                 ))}
@@ -447,6 +455,7 @@ function TradeCard({
 }) {
   const { addTxn, upsertAsset, updateAsset } = useStore();
   const b = useTradeBasis(card.payload, positions);
+  const [funding, setFunding] = useState<"cash" | "new" | null>(((card.payload.trade as ParsedTrade | null)?.paidFrom as "cash" | "new" | null | undefined) ?? null);
 
   if (card.status === "saved" || card.status === "cancelled") {
     return (
@@ -488,7 +497,10 @@ function TradeCard({
   const isToday = res.date === ymd(new Date(clock()));
   const when = new Date(`${res.date}T12:00`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
   const all = res.type === "sell" && b.held.qty > 0 && Math.abs(q - b.held.qty) < Math.max(1e-9, b.held.qty * 1e-7);
-  const canSave = !!res.type && q > 0 && p > 0 && !res.missing.length && !res.problems.length;
+  const cashHere = cashBalances(b.data)[cur];
+  const askFunding = res.type === "buy" && cashHere > 0;
+  const fromCash = askFunding && funding === "cash" ? Math.min(cashHere, q * p) : 0;
+  const canSave = !!res.type && q > 0 && p > 0 && !res.missing.length && !res.problems.length && (!askFunding || !!funding);
   const verb = res.type === "sell" ? "Sold" : res.type === "buy" ? "Bought" : "Traded";
   const summary = `${verb} ${all ? "all " : ""}${fmtQty(q)} ${unit} of ${asset.name} at ${fmtPrice(p, cur)} on ${when}${brokers ? ` (${brokers})` : ""}`;
 
@@ -502,9 +514,10 @@ function TradeCard({
       if (!(l.qty! > 0)) continue;
       const here = b.held.byAccount[l.accountId] ?? 0;
       const units = res.type === "sell" && Math.abs(l.qty! - here) <= Math.max(1e-9, here * 1e-7) ? here : l.qty!;
-      addTxn({ assetId: id, accountId: l.accountId, type: res.type!, qty: units, price: p, ts, opening: false, via: "Ask Folio" });
+      addTxn({ assetId: id, accountId: l.accountId, type: res.type!, qty: units, price: p, ts, opening: false, via: "Ask Folio" }, { fromCash: askFunding && funding === "cash" });
     }
-    onUpdate({ status: "saved", saved: summary });
+    const cashNote = res.type === "sell" ? ` · ${money(q * p, cur)} to cash` : fromCash > 0 ? ` · ${money(fromCash, cur)} from cash` : "";
+    onUpdate({ status: "saved", saved: summary + cashNote });
     onSaved(res.type === "sell" ? "Sale added" : "Purchase added");
   }
 
@@ -537,6 +550,33 @@ function TradeCard({
           Average cost goes from {fmtPrice(avg, cur)} to <b className="text-ink">{fmtPrice((b.held.cost + q * p) / (b.held.qty + q), cur)}</b>.
         </p>
       )}
+      {res.type === "sell" && q > 0 && p > 0 && !res.problems.length && (
+        <p className="num border-t border-line bg-surface px-3.5 py-2 text-xs text-ink-2">
+          <b className="text-ink">{money(q * p, cur)}</b> goes into your cash.
+        </p>
+      )}
+      {askFunding && q > 0 && p > 0 && (
+        <div className="border-t border-line bg-surface px-3.5 py-2.5">
+          <p className="mb-1.5 text-xs font-semibold">Where did the money come from?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {(["cash", "new"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFunding(f)}
+                className={`press h-7 rounded-full px-2.5 text-[11.5px] font-semibold ring-1 transition-colors ${funding === f ? "bg-ink text-canvas ring-ink" : "bg-surface text-ink-2 ring-line hover:text-ink"}`}
+              >
+                {f === "cash" ? `My cash (${money(cashHere, cur)})` : "New money"}
+              </button>
+            ))}
+          </div>
+          {funding === "cash" && (
+            <p className="num mt-1.5 text-[11px] text-ink-3">
+              {fromCash < q * p ? `Uses all ${money(fromCash, cur)} of cash; the other ${money(q * p - fromCash, cur)} counts as new money.` : `Leaves ${money(cashHere - fromCash, cur)} in cash.`}
+            </p>
+          )}
+        </div>
+      )}
       {need.length > 0 && (
         <div className="border-t border-line bg-surface px-3.5 py-2 text-xs font-semibold text-down">
           {res.earliestDate ? res.problems[0] : `Still needed: ${need.join("; ")}. Just reply with it.`}
@@ -556,6 +596,69 @@ function TradeCard({
           Confirm and save
         </Button>
         <Button variant="quiet" className="h-9" onClick={() => onUpdate({ status: "cancelled", saved: summary })}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Money added to or taken out of cash, described in the chat. Saved only on confirm. */
+function CashActionCard({ card, onUpdate, onSaved }: { card: ChatCard; onUpdate: (p: Partial<ChatCard>) => void; onSaved: (m: string) => void }) {
+  const { data, addCash } = useStore();
+  const pl = card.payload as { direction: "add" | "withdraw"; amount: number; currency: Currency; date: string | null; note: string | null };
+  const [cur, setCur] = useState<Currency>(pl.currency ?? "INR");
+  if (card.status === "saved" || card.status === "cancelled") {
+    return (
+      <div className={`ml-8 flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-[13px] ${card.status === "saved" ? "bg-up-soft text-up" : "bg-sunken text-ink-3"}`}>
+        {card.status === "saved" ? "✓ Recorded: " : "Cancelled. "}
+        <span className="text-ink-2">{card.saved ?? ""}</span>
+      </div>
+    );
+  }
+  const add = pl.direction === "add";
+  const today = ymd(new Date(clock()));
+  const date = pl.date ?? today;
+  const ts = date === today ? null : new Date(`${date}T12:00`).getTime();
+  const have = cashBalances(data, ts ?? Infinity)[cur];
+  const short = !add && pl.amount > have + 0.005;
+  const label = `${add ? "Added" : "Withdrew"} ${money(pl.amount, cur)} ${add ? "to" : "from"} cash${date !== today ? ` on ${new Date(`${date}T12:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}`;
+  function confirm() {
+    if (short) return;
+    addCash({ currency: cur, amount: add ? pl.amount : -pl.amount, ts: ts ?? clock(), kind: add ? "added" : "withdrawn", note: pl.note ?? undefined, via: "Ask Folio" });
+    onUpdate({ status: "saved", saved: label });
+    onSaved(add ? "Cash added" : "Cash withdrawn");
+  }
+  return (
+    <div className="ml-8 overflow-hidden rounded-[20px] ring-1 ring-[color-mix(in_srgb,var(--cat-6)_45%,transparent)]">
+      <div className="flex items-center gap-3 px-3.5 py-3" style={{ background: "color-mix(in srgb, var(--cat-6) 14%, var(--surface))" }}>
+        <span className="grid size-[30px] place-items-center rounded-full text-white" style={{ background: "var(--cat-6)" }}>
+          {Icon.wallet}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold" style={{ color: "var(--cat-6)" }}>
+            {add ? "Add to your cash?" : "Take out of your cash?"}
+          </p>
+          <p className="num truncate text-[14px] font-bold">{money(pl.amount, cur)}</p>
+        </div>
+        <div className="ml-auto flex rounded-full bg-surface p-0.5 ring-1 ring-line">
+          {(["INR", "USD"] as Currency[]).map((c) => (
+            <button key={c} type="button" onClick={() => setCur(c)} className={`h-6 rounded-full px-2 text-[11px] font-bold ${cur === c ? "bg-ink text-canvas" : "text-ink-3"}`} aria-pressed={cur === c}>
+              {c === "INR" ? "₹" : "$"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <dl className="num grid grid-cols-2 gap-x-3 gap-y-2.5 bg-surface px-3.5 py-3 text-[13px]">
+        <Fact label="When" value={new Date(`${date}T12:00`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })} sub={date === today ? "today" : undefined} />
+        <Fact label="Cash after" value={money(Math.max(0, have + (add ? pl.amount : -pl.amount)), cur)} sub={pl.note ?? undefined} />
+      </dl>
+      {short && <p className="border-t border-line bg-surface px-3.5 py-2 text-xs font-semibold text-down">You {ts ? "had" : "have"} {money(have, cur)} in cash{ts ? " then" : ""}, so you can&apos;t take out {money(pl.amount, cur)}.</p>}
+      <div className="flex gap-2 border-t border-line bg-surface p-2.5">
+        <Button onClick={confirm} disabled={short} className="h-9 flex-1">
+          Confirm and save
+        </Button>
+        <Button variant="quiet" className="h-9" onClick={() => onUpdate({ status: "cancelled", saved: label })}>
           Cancel
         </Button>
       </div>
