@@ -1,26 +1,453 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --canvas: #f1f2f5;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --sunken: #f5f6f8;
+  --ink: #15171c;
+  --ink-2: #5a6070;
+  --ink-3: #8b91a0;
+  --line: #e5e7ec;
+  --accent: #2f5bea;
+  --accent-ink: #1f46c9;
+  --accent-soft: #e9efff;
+  --up: #0a7f45;
+  --up-soft: #e3f5ea;
+  --down: #c9343f;
+  --down-soft: #fde9ea;
+  --cat-1: #2f5bea;
+  --cat-2: #e8871e;
+  --cat-3: #0e9f8e;
+  --cat-4: #8b5cf6;
+  --cat-5: #d6457b;
+  --cat-6: #6b8e12;
+  --glow: rgba(47, 91, 234, 0.1);
+  --tip: #15171c;
+  --scrim: rgba(21, 23, 28, 0.4);
+  --shadow-card: 0 1px 0 rgba(21, 23, 28, 0.03), 0 14px 34px -20px rgba(27, 39, 84, 0.2);
+  --shadow-pop: 0 28px 70px -22px rgba(20, 28, 60, 0.4), 0 2px 6px rgba(20, 28, 60, 0.06);
+  --shadow-thumb: 0 1px 2px rgba(21, 23, 28, 0.14), 0 0 0 0.5px rgba(21, 23, 28, 0.05);
+}
+
+/* Dark is its own set of steps, not an inversion. Applied by system setting or explicit choice. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #0c0e12;
+    --surface: #14171d;
+    --raised: #2a303c;
+    --sunken: #1a1e26;
+    --ink: #f1f3f7;
+    --ink-2: #a2a9b8;
+    --ink-3: #6e7686;
+    --line: #252a34;
+    --accent: #5b7df5;
+    --accent-ink: #7792f8;
+    --accent-soft: #1b2548;
+    --up: #36c47e;
+    --up-soft: #11301f;
+    --down: #f2636d;
+    --down-soft: #3a181c;
+    --cat-1: #5578f2;
+    --cat-2: #c47a22;
+    --cat-3: #1fa896;
+    --cat-4: #9674f0;
+    --cat-5: #e0559a;
+    --cat-6: #7d9a1f;
+    --glow: rgba(91, 125, 245, 0.16);
+    --tip: #2a303c;
+    --scrim: rgba(0, 0, 0, 0.62);
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.8);
+    --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0c0e12;
+  --surface: #14171d;
+  --raised: #2a303c;
+  --sunken: #1a1e26;
+  --ink: #f1f3f7;
+  --ink-2: #a2a9b8;
+  --ink-3: #6e7686;
+  --line: #252a34;
+  --accent: #5b7df5;
+  --accent-ink: #7792f8;
+  --accent-soft: #1b2548;
+  --up: #36c47e;
+  --up-soft: #11301f;
+  --down: #f2636d;
+  --down-soft: #3a181c;
+  --cat-1: #5578f2;
+  --cat-2: #c47a22;
+  --cat-3: #1fa896;
+  --cat-4: #9674f0;
+  --cat-5: #e0559a;
+  --cat-6: #7d9a1f;
+  --glow: rgba(91, 125, 245, 0.16);
+  --tip: #2a303c;
+  --scrim: rgba(0, 0, 0, 0.62);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.8);
+  --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-up: var(--up);
+  --color-up-soft: var(--up-soft);
+  --color-down: var(--down);
+  --color-down-soft: var(--down-soft);
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 24px;
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+  --shadow-thumb: var(--shadow-thumb);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--canvas);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(900px 420px at 18% -8%, var(--glow), transparent 70%),
+    var(--canvas);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.005em;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+h1,
+h2,
+p {
+  text-wrap: pretty;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.field {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field:focus-visible,
+.field-wrap input:focus-visible {
+  outline: none;
+}
+.field::placeholder {
+  color: var(--ink-3);
+}
+.field:focus,
+.field-wrap:focus-within {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* Pressable things give a little under the finger. */
+.press {
+  transition: transform 0.16s var(--ease-out-quint), background-color 0.16s, box-shadow 0.16s, border-color 0.16s, opacity 0.16s;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+@keyframes rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+.bar-rise {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: rise 0.6s var(--ease-out-quint) both;
+}
+
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.seg-grow {
+  transform-origin: left;
+  animation: grow 0.7s var(--ease-out-quint) both;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+    filter: blur(4px);
+  }
+}
+.pop-in {
+  animation: pop 0.32s var(--ease-out-quint) both;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in {
+  animation: fade 0.25s ease-out both;
+}
+
+/* Wizard steps slide in from the direction of travel. */
+@keyframes step-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(22px);
+    filter: blur(3px);
+  }
+}
+@keyframes step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-22px);
+    filter: blur(3px);
+  }
+}
+.step-fwd {
+  animation: step-fwd 0.3s var(--ease-out-quint) both;
+}
+.step-back {
+  animation: step-back 0.3s var(--ease-out-quint) both;
+}
+
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.item-in {
+  animation: item-in 0.28s var(--ease-out-quint) both;
+}
+
+@keyframes toast {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 16px) scale(0.96);
+  }
+  10%,
+  88% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.98);
+  }
+}
+.toast {
+  animation: toast 2.8s var(--ease-out-quint) both;
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.draw {
+  stroke-dasharray: 1;
+  animation: draw 0.9s var(--ease-out-quint) both;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--sunken) 25%, var(--line) 37%, var(--sunken) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 12px;
+}
+
+/* Live-price heartbeat: a ring that swells and fades from the latest point. */
+@keyframes ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping 1.8s var(--ease-out-quint) infinite;
+}
+
+/* Diverging bars grow out from the zero line, each in its own direction. */
+.grow-from-left {
+  transform-origin: left;
+  animation: grow 0.6s var(--ease-out-quint) both;
+}
+.grow-from-right {
+  transform-origin: right;
+  animation: grow 0.6s var(--ease-out-quint) both;
+}
+
+/* Area chart wipes in left to right. */
+@keyframes wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+.wipe {
+  animation: wipe 0.9s var(--ease-out-quint) both;
+}
+
+/* Panels that open in place: height eases from 0 to its content. */
+.expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.38s var(--ease-out-quint), opacity 0.25s;
+  opacity: 0;
+}
+.expand[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.expand > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Assistant: slides up from the bottom on phones, in from the right on wide screens. */
+@keyframes assistant-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+@keyframes assistant-left {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+}
+.assistant-in {
+  animation: assistant-up 0.38s var(--ease-out-quint) both;
+}
+@media (min-width: 1024px) {
+  .assistant-in {
+    animation-name: assistant-left;
+  }
+}
+
+/* Gain/loss ring around an asset logo draws in from the top. */
+@keyframes ring-grow {
+  from {
+    stroke-dasharray: 0 100;
+  }
+}
+.ring-grow {
+  animation: ring-grow 0.9s var(--ease-out-quint) both;
+}
+
+/* What-if slider: a native range input over a custom track. */
+.whatif-range::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 100%;
+}
+.whatif-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-thumb), 0 0 0 4px var(--glow);
+  transition: transform 0.15s var(--ease-out-quint);
+}
+.whatif-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.whatif-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  box-shadow: var(--shadow-thumb), 0 0 0 4px var(--glow);
+}
+.whatif-range::-moz-range-track {
+  background: transparent;
+}
+.whatif-range:focus-visible {
+  outline: none;
+}
+.whatif-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 6px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ping,
+  .assistant-in,
+  .ring-grow,
+  .grow-from-left,
+  .grow-from-right,
+  .wipe {
+    animation: none;
+  }
+  .expand {
+    transition: none;
+  }
+  .bar-rise,
+  .seg-grow,
+  .pop-in,
+  .fade-in,
+  .step-fwd,
+  .step-back,
+  .item-in,
+  .draw,
+  .skeleton {
+    animation: none;
+  }
+  .toast {
+    animation-name: fade;
+  }
+  .press:active {
+    transform: none;
+  }
 }

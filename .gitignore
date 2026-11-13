@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# personal statements used for building importers
+/samples
+/public/__samples__
+# keep the template, never real env files
+!.env.example
+
+# statements or exports dropped in the project root (personal financial data)
+/*.xlsx
+/*.xls
+/*.csv
+/*.pdf
+
+# local tool settings and logs
+.claude/settings.local.json
+*.log
