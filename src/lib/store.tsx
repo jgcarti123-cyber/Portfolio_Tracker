@@ -12,7 +12,7 @@ import {
 } from "react";
 import { cashBalances } from "./cash";
 import type { Account, Asset, CashEntry, ChatMessage, Txn, VaultData } from "./types";
-import { createVault, saveVault, unlockVault, vaultExists, type OpenVault } from "./vault";
+import { createVault, forgetSession, rememberSession, resumeSession, saveVault, unlockVault, vaultExists, type OpenVault } from "./vault";
 
 type Status = "loading" | "new" | "locked" | "open";
 
@@ -68,9 +68,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dataRef = useRef(data);
 
   useEffect(() => {
-    vaultExists()
-      .then((exists) => setStatus(exists ? "locked" : "new"))
-      .catch(() => setStatus("new"));
+    (async () => {
+      // A refresh in the same tab picks up where it left off.
+      const resumed = await resumeSession();
+      if (resumed) {
+        vault.current = resumed.open;
+        dataRef.current = resumed.data;
+        setData(resumed.data);
+        return setStatus("open");
+      }
+      setStatus((await vaultExists()) ? "locked" : "new");
+    })().catch(() => setStatus("new"));
   }, []);
 
   /** Apply a change and write the re-encrypted vault to disk. */
@@ -82,6 +90,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const create = useCallback(async (passphrase: string) => {
     vault.current = await createVault(passphrase, EMPTY);
+    void rememberSession(vault.current);
     dataRef.current = EMPTY;
     setData(EMPTY);
     setStatus("open");
@@ -91,6 +100,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const { open, data } = await unlockVault(passphrase);
       vault.current = open;
+      void rememberSession(open);
       dataRef.current = data;
       setData(data);
       setStatus("open");
@@ -101,6 +111,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const lock = useCallback(() => {
+    void forgetSession();
     vault.current = null;
     dataRef.current = EMPTY;
     setData(EMPTY);

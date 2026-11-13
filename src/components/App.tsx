@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { activeCount, applyFilter, NO_FILTER, type Filter, type Sort } from "@/lib/filters";
 import { buildSeries, useCloses } from "@/lib/networth";
 import { todayMoves } from "@/lib/today";
@@ -53,7 +53,21 @@ function Portfolio() {
   const [currency, setCurrency] = useState<Currency>("INR");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Which screen is showing lives in browser history, so Back, Forward and refresh work.
+  const [route, setRoute] = useState<Route>(readRoute);
+  const openId = route.openId;
+  const view = route.view;
+  const go = useCallback((next: Route) => {
+    setRoute(next);
+    window.history.pushState({ ...window.history.state, folio: next }, "");
+    window.scrollTo({ top: 0 });
+  }, []);
+  const setOpenId = useCallback((id: string | null) => go({ view: readRoute().view, openId: id }), [go]);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => setRoute((e.state as { folio?: Route } | null)?.folio ?? HOME);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
 
   const market = useMarket(data.assets);
@@ -82,7 +96,6 @@ function Portfolio() {
   const today = useMemo(() => todayMoves(scoped.positions, currency, market), [scoped.positions, currency, market]);
   const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const [assistOpen, setAssistOpen] = useState(false);
-  const [view, setView] = useState<"dashboard" | "history">("dashboard");
   const closeAssist = useCallback(() => setAssistOpen(false), []);
   // The assistant always sees the whole portfolio, whatever the dashboard filter.
   const whole = useMemo(() => {
@@ -103,7 +116,7 @@ function Portfolio() {
       <header className="sticky top-0 z-30 border-b border-transparent bg-[color-mix(in_srgb,var(--canvas)_78%,transparent)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-3 sm:gap-4">
-            <button type="button" onClick={() => (setOpenId(null), setView("dashboard"))} aria-label="Folio home" className="press">
+            <button type="button" onClick={() => go(HOME)} aria-label="Folio home" className="press">
               <Logo />
             </button>
             {!empty && (
@@ -113,7 +126,7 @@ function Portfolio() {
                   { value: "history", label: "History" },
                 ]}
                 value={view}
-                onChange={(v) => (setOpenId(null), setView(v))}
+                onChange={(v) => go({ view: v, openId: null })}
                 label="Page"
                 size="sm"
               />
@@ -202,7 +215,7 @@ function Portfolio() {
             key={openAsset.id}
             asset={openAsset}
             position={positions.find((p) => p.asset.id === openAsset.id)}
-            onBack={() => setOpenId(null)}
+            onBack={() => (readRoute().openId ? window.history.back() : go({ view, openId: null }))}
             onSaved={notify}
           />
         ) : empty ? (
@@ -344,4 +357,13 @@ function Welcome({ onAdd, onImport }: { onAdd: () => void; onImport: () => void 
       </div>
     </main>
   );
+}
+
+type Route = { view: "dashboard" | "history"; openId: string | null };
+const HOME: Route = { view: "dashboard", openId: null };
+
+/** The screen recorded in this history entry (survives a refresh). */
+function readRoute(): Route {
+  const r = (window.history.state as { folio?: Route } | null)?.folio;
+  return r ? { view: r.view === "history" ? "history" : "dashboard", openId: typeof r.openId === "string" ? r.openId : null } : HOME;
 }
