@@ -14,7 +14,7 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 export function IconTile({ color, children }: { color: string; children: ReactNode }) {
   return (
     <span
-      className="grid size-7 shrink-0 place-items-center rounded-[9px] text-white"
+      className="grid size-6 shrink-0 place-items-center rounded-[7px] text-white [&_svg]:size-[13px]"
       style={{ background: color }}
       aria-hidden
     >
@@ -38,7 +38,7 @@ export function CardHead({
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2.5">
         <IconTile color={color}>{icon}</IconTile>
-        <h2 className="text-[15px] font-semibold">{title}</h2>
+        <h2 className="label text-[11.5px] text-ink">{title}</h2>
       </div>
       {children}
     </header>
@@ -430,7 +430,7 @@ export function Disclosure({
         className="group flex w-full items-center gap-3 rounded-card px-5 py-4 text-left sm:px-6"
       >
         <IconTile color={color}>{icon}</IconTile>
-        <h2 className="shrink-0 text-[15px] font-semibold">{title}</h2>
+        <h2 className="label shrink-0 text-[11.5px] text-ink">{title}</h2>
         <span className="ml-auto flex min-w-0 items-center justify-end gap-3 text-[13px] text-ink-2">{summary}</span>
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-sunken text-ink-2 transition-colors group-hover:bg-line group-hover:text-ink">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className={`transition-transform duration-300 ease-out-quint ${open ? "rotate-180" : ""}`}>

@@ -126,7 +126,7 @@ export function Highlights({
     <Card className="h-full p-5 sm:p-6">
       <header className="flex items-center gap-2.5">
         <IconTile color="var(--cat-2)">{ico("M8 1.8l1.8 3.9 4.2.5-3.1 2.9.8 4.2L8 11.2l-3.7 2.1.8-4.2L2 6.2l4.2-.5z")}</IconTile>
-        <h2 className="text-[15px] font-semibold">Highlights</h2>
+        <h2 className="label text-[11.5px] text-ink">Highlights</h2>
       </header>
 
       <div className="-mx-2.5 mt-3 divide-y divide-line">

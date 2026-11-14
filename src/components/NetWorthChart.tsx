@@ -187,7 +187,7 @@ export function NetWorthChart({
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <IconTile color="var(--cat-3)">{Icon.wallet}</IconTile>
-          <h2 className="text-[15px] font-semibold">Net worth</h2>
+          <h2 className="label text-[11.5px] text-ink">Net worth</h2>
           {filtered && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">Filtered</span>}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
