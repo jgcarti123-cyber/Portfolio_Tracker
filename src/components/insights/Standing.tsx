@@ -2,15 +2,45 @@
 
 import { useState } from "react";
 import type { StandPoint } from "@/lib/insights";
-import { Finding, Tip, TipNote, TipTitle, TipValue, useSize } from "./kit";
+import type { ReactNode } from "react";
+import { Tip, TipNote, TipTitle, TipValue, useSize } from "./kit";
 
-const SOURCE = "https://blog.theleapjournal.org/2016/11/direct-participation-in-indian-equity.html";
+/** One sentence: how many real bets you have, and which reference portfolio you resemble. */
+export function standingFinding(points: StandPoint[], holdings: number): ReactNode {
+  const you = points.find((p) => p.you);
+  if (!you) return null;
+  const refs = points.filter((p) => !p.you);
+  const twin = refs.length ? refs.reduce((a, b) => (Math.abs(b.bets - you.bets) < Math.abs(a.bets - you.bets) ? b : a)) : null;
+  const ratio = twin && twin.vol > 0 ? you.vol / twin.vol : null;
+  return (
+    <>
+      Your {holdings} holding{holdings === 1 ? "" : "s"} behave like <b>{you.bets.toFixed(1)}</b> independent bet{you.bets < 1.05 ? "" : "s"}
+      {twin && (
+        <>
+          {" "}
+          — about as spread as owning <b>{twin.label}</b>
+          {twin.parts > 1 ? " in equal parts" : ""}
+          {ratio && ratio > 1.15 ? (
+            <>
+              , but with <b>{ratio.toFixed(1)}×</b> its swings
+            </>
+          ) : ratio && ratio < 0.87 ? (
+            <>
+              , with only <b>{Math.round(ratio * 100)}%</b> of its swings
+            </>
+          ) : null}
+        </>
+      )}
+      .
+    </>
+  );
+}
 
 /**
  * Where you sit: independent bets (up) against yearly swing (across), next to real index
  * portfolios over the same days. Up and to the left is better spread and calmer.
  */
-export function Standing({ points, holdings }: { points: StandPoint[]; holdings: number }) {
+export function StandingChart({ points }: { points: StandPoint[] }) {
   const [ref, box] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<string | null>(null);
   const you = points.find((p) => p.you)!;
@@ -28,34 +58,12 @@ export function Standing({ points, holdings }: { points: StandPoint[]; holdings:
   const x = (v: number) => left + (v / maxVol) * plotW;
   const y = (b: number) => top + ((maxBets - b) / (maxBets - 0.5)) * plotH;
   const volTicks = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1].filter((t) => t <= maxVol);
-  const twin = refs.length ? refs.reduce((a, b) => (Math.abs(b.bets - you.bets) < Math.abs(a.bets - you.bets) ? b : a)) : null;
-  const ratio = twin && twin.vol > 0 ? you.vol / twin.vol : null;
   const h = points.find((p) => p.key === hover) ?? null;
   const placed = W > 0 ? placeLabels(refs, you, x, y, { x0: left, x1: left + plotW, y0: top, y1: top + plotH }) : new Map<string, Label>();
 
   return (
     <div>
-      <Finding>
-        Your {holdings} holding{holdings === 1 ? "" : "s"} behave like <b>{you.bets.toFixed(1)}</b> independent bet{you.bets < 1.05 ? "" : "s"}
-        {twin && (
-          <>
-            {" "}
-            — similar to owning <b>{twin.label}</b>
-            {twin.parts > 1 ? " in equal parts" : ""}
-            {ratio && ratio > 1.15 ? (
-              <>
-                , but with <b>{ratio.toFixed(1)}×</b> its yearly swing
-              </>
-            ) : ratio && ratio < 0.87 ? (
-              <>
-                , with only <b>{Math.round(ratio * 100)}%</b> of its yearly swing
-              </>
-            ) : null}
-          </>
-        )}
-        .
-      </Finding>
-      <div ref={ref} className="relative mt-3" style={{ height: H }} onPointerLeave={() => setHover(null)}>
+      <div ref={ref} className="relative" style={{ height: H }} onPointerLeave={() => setHover(null)}>
         {W > 0 && (
           <svg width={W} height={H} className="absolute inset-0 block overflow-visible">
             <defs>
@@ -113,14 +121,6 @@ export function Standing({ points, holdings }: { points: StandPoint[]; holdings:
           <span className="font-semibold text-up">↖ spread out, calmer</span> · <span className="font-semibold text-down">↘ concentrated, jumpier</span>
         </span>
       </div>
-      <p className="mt-3 rounded-xl bg-sunken/70 px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-3 ring-1 ring-line">
-        For context: in NSDL depository data to December 2015, about <b className="font-semibold text-ink-2">29%</b> of Indian direct-equity accounts held a single stock and
-        more than half held fewer than three (
-        <a href={SOURCE} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent hover:underline">
-          Dutt, Sane &amp; Thomas
-        </a>
-        ; direct stocks only, not funds). You hold {holdings}.
-      </p>
     </div>
   );
 }

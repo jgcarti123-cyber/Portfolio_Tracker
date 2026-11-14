@@ -2,58 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { compact, money } from "@/lib/format";
-import { evalWhatIf, type Driver, type Risk, type WhatIfModel } from "@/lib/insights";
+import { evalWhatIf, type WhatIfModel } from "@/lib/insights";
 import type { Currency } from "@/lib/types";
-import { Rich } from "./kit";
-
-/** Plain facts on what limits your spread. Never a recommendation. */
-export function Concentration({ drivers, risk }: { drivers: Driver[]; risk: Risk }) {
-  const held = risk.byHolding.filter((h) => h.key !== "cash");
-  const top3 = [...held].filter((h) => h.key !== "others").slice(0, 3).reduce((s, h) => s + h.money, 0);
-  const bigType = [...risk.byClass].filter((c) => c.key !== "cash").sort((a, b) => b.money - a.money)[0];
-  return (
-    <div className="flex h-full flex-col">
-      {drivers.length ? <Facts drivers={drivers} /> : <p className="text-[13px] text-ink-3">Nothing stands out — no single holding or overlap dominates your risk.</p>}
-      <div className="mt-auto grid grid-cols-3 gap-2 pt-5">
-        <Num label="Holdings" value={String(risk.holdings)} sub={`${risk.bets.toFixed(1)} real bets`} />
-        <Num label="Top 3 holdings" value={`${Math.round(top3 * 100)}%`} sub="of your money" />
-        {bigType && <Num label="Biggest asset type" value={`${Math.round(bigType.money * 100)}%`} sub={bigType.label} />}
-      </div>
-    </div>
-  );
-}
-
-function Num({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-xl bg-sunken/70 px-3 py-2.5 ring-1 ring-line">
-      <p className="truncate text-[10.5px] text-ink-3">{label}</p>
-      <p className="num mt-0.5 text-[18px] font-extrabold tracking-[-0.02em]">{value}</p>
-      <p className="truncate text-[10.5px] text-ink-3">{sub}</p>
-    </div>
-  );
-}
-
-function Facts({ drivers }: { drivers: Driver[] }) {
-  return (
-    <ul className="space-y-2.5">
-      {drivers.map((d, i) => (
-        <li key={i} className="item-in flex gap-3 rounded-xl px-3.5 py-3 ring-1 ring-line" style={{ animationDelay: `${i * 40}ms` }}>
-          <span
-            className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
-              d.tone === "warn" ? "bg-down-soft text-down" : d.tone === "good" ? "bg-up-soft text-up" : "bg-accent-soft text-accent"
-            }`}
-            aria-hidden
-          >
-            {d.tone === "warn" ? "!" : d.tone === "good" ? "✓" : "i"}
-          </span>
-          <p className="text-[13px] leading-snug text-ink-2">
-            <Rich text={d.text} />
-          </p>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /**
  * Try a different mix and see how spread and swing would have looked over the same days.
@@ -75,7 +25,8 @@ export function WhatIf({ model, currency }: { model: WhatIfModel; currency: Curr
       <div className="max-h-[440px] space-y-1 overflow-y-auto pr-1">
         {model.items.map((it, i) => {
           const max = it.kind === "extra" ? Math.round(total0 * 0.5) : Math.max(Math.round(it.value * 2), Math.round(total0 * 0.1));
-          const share = after.total > 0 ? values[i] / after.total : 0;
+          const share = after.money[i] ?? 0;
+          const swing = Math.max(0, after.swings[i] ?? 0);
           const touched = moved[it.key] !== undefined && Math.abs(moved[it.key] - start[i]) > 0.5;
           return (
             <label key={it.key} className={`block rounded-xl px-3 py-2.5 transition-colors ${touched ? "bg-accent-soft/60" : "hover:bg-sunken/70"}`}>
@@ -86,7 +37,7 @@ export function WhatIf({ model, currency }: { model: WhatIfModel; currency: Curr
                   {it.kind === "extra" && <span className="shrink-0 rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-semibold text-ink-3 ring-1 ring-line">test adding</span>}
                 </span>
                 <span className="num shrink-0 text-ink-2">
-                  <b className="font-semibold text-ink">{compact(values[i], currency)}</b> · {Math.round(share * 100)}%
+                  <b className="font-semibold text-ink">{compact(values[i], currency)}</b>
                 </span>
               </div>
               <input
@@ -99,6 +50,12 @@ export function WhatIf({ model, currency }: { model: WhatIfModel; currency: Curr
                 className="mt-2 w-full accent-[var(--accent)]"
                 aria-label={`${it.label} amount`}
               />
+              {share > 0 && (
+                <div className="mt-1.5 grid grid-cols-2 gap-3 text-[10.5px] text-ink-3">
+                  <ShareBar label="money" value={share} color={it.color} soft />
+                  <ShareBar label="swings" value={swing} color={it.color} />
+                </div>
+              )}
             </label>
           );
         })}
@@ -146,6 +103,19 @@ function Metric({ label, before, after, better, changed, hint }: { label: string
         <span className={`num text-[22px] font-extrabold tracking-[-0.02em] ${tone}`}>{changed ? after : before}</span>
       </div>
       <p className="mt-0.5 text-[11px] text-ink-3">{hint}</p>
+    </div>
+  );
+}
+
+function ShareBar({ label, value, color, soft }: { label: string; value: number; color: string; soft?: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken ring-1 ring-line">
+        <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.min(100, value * 100)}%`, background: color, opacity: soft ? 0.45 : 1 }} />
+      </div>
+      <span className="num w-[78px] shrink-0">
+        {Math.round(value * 100)}% {label}
+      </span>
     </div>
   );
 }

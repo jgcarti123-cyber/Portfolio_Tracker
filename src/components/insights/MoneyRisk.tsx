@@ -21,7 +21,7 @@ export const SWING_EXPLAINER = (
  * Where your money sits vs where your swings come from: two stacked columns joined by
  * ribbons, so a slice that's small in money but big in swings visibly fans out.
  */
-export function MoneyRisk({ risk, currency, compact = false }: { risk: Risk; currency: Currency; compact?: boolean }) {
+export function MoneyRisk({ risk, currency, compact = false, bare = false }: { risk: Risk; currency: Currency; compact?: boolean; bare?: boolean }) {
   const [group, setGroup] = useState<Group>("class");
   const [hover, setHover] = useState<string | null>(null);
   const [ref, box] = useSize<HTMLDivElement>();
@@ -65,8 +65,8 @@ export function MoneyRisk({ risk, currency, compact = false }: { risk: Risk; cur
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <Finding className={compact ? "max-w-[340px] text-[14px]" : "max-w-[520px]"}>{finding}</Finding>
+      <div className={`flex flex-wrap items-start gap-3 ${bare ? "justify-end" : "justify-between"}`}>
+        {!bare && <Finding className={compact ? "max-w-[340px] text-[14px]" : "max-w-[520px]"}>{finding}</Finding>}
         <Segmented
           options={[
             { value: "class", label: "Asset type" },
@@ -147,7 +147,7 @@ export function MoneyRisk({ risk, currency, compact = false }: { risk: Risk; cur
         )}
       </div>
 
-      <Bets risk={risk} currency={currency} compact={compact} />
+      {!bare && <Bets risk={risk} currency={currency} compact={compact} />}
     </div>
   );
 }

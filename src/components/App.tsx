@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { activeCount, applyFilter, NO_FILTER, type Filter, type Sort } from "@/lib/filters";
 import { buildSeries, useCloses } from "@/lib/networth";
 import { todayMoves } from "@/lib/today";
-import { riskBreakdown } from "@/lib/insights";
 import { cashBalances, cashTotal } from "@/lib/cash";
 import { buildPositions, totals as sumTotals, type Totals } from "@/lib/portfolio";
 import { useMarket } from "@/lib/prices";
@@ -14,13 +13,11 @@ import { ThemeProvider, useTheme } from "@/lib/theme";
 import type { Currency } from "@/lib/types";
 import { AddHolding } from "./AddHolding";
 import { AiConsent } from "./AiConsent";
-import { Allocation } from "./Allocation";
 import { Assistant, Sparkle } from "./Assistant";
 import { CashCard } from "./Cash";
 import { AssetView } from "./AssetView";
-import { InsightCard, InsightsPage } from "./insights/InsightsPage";
-import { InsightIcon } from "./insights/kit";
-import { Correlations, MoneyRisk, SWING_EXPLAINER } from "./insights/MoneyRisk";
+import { InsightsPage } from "./insights/InsightsPage";
+import { HoldingsMap } from "./HoldingsMap";
 import { ActiveFilters, FilterButton } from "./FilterBar";
 import { Gate, Logo } from "./Gate";
 import { Highlights } from "./Highlights";
@@ -98,12 +95,7 @@ function Portfolio() {
     [scoped, closes, market, currency],
   );
   const today = useMemo(() => todayMoves(scoped.positions, currency, market), [scoped.positions, currency, market]);
-  // Insights follow the dashboard filter on the dashboard; the Insights tab always sees everything.
-  const insightInput = useMemo(
-    () => ({ data: scoped.data, positions: scoped.positions, closes, usdInr: market.usdInr, fxSeries: market.fxSeries, currency, series, withCash: !filtered }),
-    [scoped, closes, market.usdInr, market.fxSeries, currency, series, filtered],
-  );
-  const risk = useMemo(() => riskBreakdown(insightInput, "mix"), [insightInput]);
+  // The Insights tab always sees everything, whatever the dashboard filter.
   const wholeSeries = useMemo(() => (filtered ? buildSeries(data, positions, closes, market, currency) : series), [filtered, data, positions, closes, market, currency, series]);
   const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const [assistOpen, setAssistOpen] = useState(false);
@@ -256,48 +248,21 @@ function Portfolio() {
               </Card>
             ) : (
               <>
-                <NetWorthChart
-                  series={series}
-                  totals={totals}
-                  currency={currency}
-                  loading={loading}
-                  today={today}
-                  filtered={filtered}
-                  missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
-                />
                 <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-                  {risk.ok ? (
-                    <InsightCard
-                      icon={InsightIcon.risk}
-                      title="Money vs risk"
-                      color="var(--cat-4)"
-                      explain={SWING_EXPLAINER}
-                      action={<InsightsLink onClick={() => go({ view: "insights", openId: null })} />}
-                    >
-                      <MoneyRisk risk={risk} currency={currency} compact />
-                    </InsightCard>
-                  ) : (
-                    <Allocation positions={scoped.positions} accounts={data.accounts} currency={currency} usdInr={market.usdInr} cash={filtered ? 0 : cashNow} />
-                  )}
-                  {risk.ok && risk.corr.labels.length >= 2 ? (
-                    <InsightCard
-                      icon={InsightIcon.flow}
-                      title="What moves together"
-                      color="var(--cat-1)"
-                      explain="Shows which of your holdings rise and fall together. Owning things that move together doesn't spread your risk."
-                      action={<InsightsLink onClick={() => go({ view: "insights", openId: null })} />}
-                    >
-                      <Correlations risk={risk} compact />
-                    </InsightCard>
-                  ) : (
-                    <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
-                  )}
+                  <NetWorthChart
+                    series={series}
+                    totals={totals}
+                    currency={currency}
+                    loading={loading}
+                    today={today}
+                    filtered={filtered}
+                    missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
+                  />
+                  <HoldingsMap positions={scoped.positions} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} />
                 </div>
-                <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+                <div className={`grid grid-cols-1 items-stretch gap-4 ${filtered ? "" : "lg:grid-cols-2"}`}>
                   {!filtered && <CashCard currency={currency} usdInr={market.usdInr} onSaved={notify} />}
-                  {risk.ok && risk.corr.labels.length >= 2 && (
-                    <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
-                  )}
+                  <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
                 </div>
                 <TodayMovers today={today} currency={currency} onOpen={setOpenId} />
                 <Holdings
@@ -405,12 +370,4 @@ const HOME: Route = { view: "dashboard", openId: null };
 function readRoute(): Route {
   const r = (window.history.state as { folio?: Route } | null)?.folio;
   return r ? { view: r.view === "history" || r.view === "insights" ? r.view : "dashboard", openId: typeof r.openId === "string" ? r.openId : null } : HOME;
-}
-
-function InsightsLink({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="text-[12px] font-semibold text-accent hover:underline">
-      All insights
-    </button>
-  );
 }

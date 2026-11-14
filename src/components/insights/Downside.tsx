@@ -6,18 +6,12 @@ import type { Scorecard as Data } from "@/lib/insights";
 import type { Currency } from "@/lib/types";
 import { pctText, shareText } from "./kit";
 
-/** Six numbers that sum up how much you could lose and where the risk sits. */
-export function Scorecard({ card, currency }: { card: Data; currency: Currency }) {
+/** Four numbers that sum up how much you could lose. */
+export function Downside({ card, currency }: { card: Data; currency: Currency }) {
   const m = (n: number) => money(Math.abs(n), currency, { decimals: 0 });
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <Tile
-        label="Biggest single holding"
-        value={card.top ? `${shareText(card.top.money)}` : "–"}
-        tag={card.top?.label}
-        line={card.top ? `of your money is in ${card.top.label}, and it causes ${shareText(card.top.risk)} of your swings.` : "No holdings with prices yet."}
-        tone={card.top && card.top.money >= 0.3 ? -1 : 0}
-      />
+    <div className="flex h-full flex-col">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Tile
         label="A bad day (1 in 20)"
         value={card.badDay ? `−${m(card.badDay.amount)}` : "–"}
@@ -54,18 +48,33 @@ export function Scorecard({ card, currency }: { card: Data; currency: Currency }
         line={card.foreign.share > 0 ? `If the rupee ${currency === "INR" ? "strengthens" : "weakens"} 5% against the dollar, you'd lose about ${m(card.foreign.hit)}.` : "Everything you hold is priced in your own currency."}
         tone={0}
       />
-      <Tile
-        label="Yearly swing"
-        value={card.vol ? `±${Math.round(card.vol.you * 100)}%` : "–"}
-        line={
-          card.vol
-            ? card.vol.nifty
-              ? `Your value moves about ${(card.vol.you / card.vol.nifty).toFixed(1)}× as much as Nifty 50 (±${Math.round(card.vol.nifty * 100)}%) in a typical year.`
-              : "How far your value typically moves up or down in a year."
-            : "Not enough history yet."
-        }
-        tone={card.vol && card.vol.nifty && card.vol.you > card.vol.nifty * 1.5 ? -1 : 0}
-      />
+    </div>
+    {card.vol && (
+      <div className="mt-auto pt-5">
+        <p className="text-[12.5px] font-semibold">How far your value moves in a typical year</p>
+        <div className="mt-2.5 space-y-2">
+          <SwingBar label="You" value={card.vol.you} max={Math.max(card.vol.you, card.vol.nifty ?? 0)} color="var(--ink)" />
+          {card.vol.nifty !== null && <SwingBar label="Nifty 50" value={card.vol.nifty} max={Math.max(card.vol.you, card.vol.nifty)} color="var(--cat-1)" />}
+        </div>
+        {card.vol.nifty !== null && (
+          <p className="mt-2 text-[12px] text-ink-3">
+            You swing about <b className="font-semibold text-ink-2">{(card.vol.you / card.vol.nifty).toFixed(1)}×</b> as much as an Indian index fund.
+          </p>
+        )}
+      </div>
+    )}
+    </div>
+  );
+}
+
+function SwingBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3 text-[12px]">
+      <span className="w-16 shrink-0 text-ink-2">{label}</span>
+      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-sunken ring-1 ring-line">
+        <div className="seg-grow h-full rounded-full" style={{ width: `${(value / Math.max(max, 1e-9)) * 100}%`, background: color, opacity: label === "You" ? 0.85 : 1 }} />
+      </div>
+      <span className="num w-12 shrink-0 text-right font-bold">±{Math.round(value * 100)}%</span>
     </div>
   );
 }

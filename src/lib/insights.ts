@@ -591,7 +591,9 @@ function mixStats(cov: number[][], w: number[]) {
   const sd = cov.map((row, i) => Math.sqrt(Math.max(0, row[i])));
   const risky = w.filter((wi, i) => wi > 0 && sd[i] > 0).length;
   const bets = sdP > 0 ? Math.min(Math.max(1, risky), Math.max(1, (w.reduce((s, wi, i) => s + wi * sd[i], 0) / sdP) ** 2)) : 1;
-  return { sdP, bets, vol: sdP * Math.sqrt(WEEKDAYS_PER_YEAR) };
+  // Each item's share of the swings (they add up to 1).
+  const rc = w.map((wi, i) => (varP > 0 ? (wi * sw[i]) / varP : 0));
+  return { sdP, bets, vol: sdP * Math.sqrt(WEEKDAYS_PER_YEAR), rc };
 }
 
 function corrOf(a: number[], b: number[]) {
@@ -730,12 +732,10 @@ export function whatIfModel(inp: InsightInput, basis: Basis): WhatIfModel | null
 
 export function evalWhatIf(model: WhatIfModel, values: number[]) {
   const total = values.reduce((s, v) => s + Math.max(0, v), 0);
-  if (total <= 0) return { total: 0, bets: 0, vol: 0, daySd: 0 };
-  const s = mixStats(
-    model.cov,
-    values.map((v) => Math.max(0, v) / total),
-  );
-  return { total, bets: s.bets, vol: s.vol, daySd: s.sdP };
+  if (total <= 0) return { total: 0, bets: 0, vol: 0, daySd: 0, money: values.map(() => 0), swings: values.map(() => 0) };
+  const w = values.map((v) => Math.max(0, v) / total);
+  const s = mixStats(model.cov, w);
+  return { total, bets: s.bets, vol: s.vol, daySd: s.sdP, money: w, swings: s.rc };
 }
 
 /* ───────────────────────── 11. what drives you ───────────────────────── */

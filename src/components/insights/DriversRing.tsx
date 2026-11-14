@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { compact, money } from "@/lib/format";
-import type { Factor } from "@/lib/insights";
+import type { Factor, MarketBehaviour } from "@/lib/insights";
 import type { Currency } from "@/lib/types";
 import { Finding } from "./kit";
 
@@ -19,7 +19,7 @@ function arc(cx: number, cy: number, r: number, f: number) {
  * What drives you: one ring per market. The longer the ring, the more of your daily ups and
  * downs follow that market. Each row says what a 1% fall in it has typically meant for you.
  */
-export function DriversRing({ factors, currency }: { factors: Factor[]; currency: Currency }) {
+export function DriversRing({ factors, markets = [], currency }: { factors: Factor[]; markets?: MarketBehaviour[]; currency: Currency }) {
   const [hover, setHover] = useState<string | null>(null);
   const list = factors.slice(0, 5);
   const S = 240;
@@ -31,6 +31,10 @@ export function DriversRing({ factors, currency }: { factors: Factor[]; currency
   const quiet = [...list].sort((a, b) => Math.abs(a.per1) - Math.abs(b.per1))[0];
   const active = list.find((f) => f.key === hover) ?? lead;
   const m = (n: number) => money(Math.abs(n), currency, { decimals: 0 });
+  const fallOf = (key: string) => markets.find((x) => x.key === key);
+  const pp = (f: number) => `${f < 0 ? "−" : "+"}${Math.abs(f * 100).toFixed(1)}%`;
+  // The market whose bad days you rode out best, relative to its fall.
+  const steady = [...markets].filter((x) => x.worstMkt < 0).sort((a, b) => a.worstYou / a.worstMkt - b.worstYou / b.worstMkt)[0];
 
   return (
     <div>
@@ -40,6 +44,12 @@ export function DriversRing({ factors, currency }: { factors: Factor[]; currency
           <>
             {" "}
             <b>{quiet.label}</b> barely moves you.
+          </>
+        )}
+        {steady && (
+          <>
+            {" "}
+            On {steady.label}&apos;s 10 worst days you averaged <b>{pp(steady.worstYou)}</b> against its <b>{pp(steady.worstMkt)}</b>.
           </>
         )}
       </Finding>
@@ -92,6 +102,12 @@ export function DriversRing({ factors, currency }: { factors: Factor[]; currency
               <p className="mt-0.5 text-[11.5px] text-ink-3">
                 When {f.fall} · follows {Math.round(f.r2 * 100)}% of your moves
               </p>
+              {fallOf(f.key) && (
+                <p className="mt-0.5 text-[11.5px] text-ink-3">
+                  Its 10 worst days: you <b className={`num font-semibold ${fallOf(f.key)!.worstYou < 0 ? "text-down" : "text-up"}`}>{pp(fallOf(f.key)!.worstYou)}</b> vs{" "}
+                  <b className="num font-semibold text-ink-2">{pp(fallOf(f.key)!.worstMkt)}</b>
+                </p>
+              )}
             </li>
           ))}
         </ul>
