@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 
 /** Wordmark: extended, tracked capitals with a small indicator light, like a panel legend. */
@@ -15,14 +15,6 @@ export function Logo({ tone = "ink" }: { tone?: "ink" | "white" }) {
   );
 }
 
-/** The four pictures, and where each one's horizon sits so a wide screen crops around it. */
-const SLIDES = [
-  { src: "/unlock/1.webp", y: "64%" },
-  { src: "/unlock/2.webp", y: "60%" },
-  { src: "/unlock/3.webp", y: "55%" },
-  { src: "/unlock/4.webp", y: "54%" },
-];
-const HOLD = 7000;
 const SEGMENTS = 32;
 
 type MeterState = "idle" | "reading" | "error";
@@ -35,15 +27,7 @@ export function Gate() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [state, setState] = useState<MeterState>("idle");
-  const [slide, setSlide] = useState({ on: 0, prev: -1, cycle: 0 });
   const input = useRef<HTMLInputElement>(null);
-
-  // Slow slideshow; it stays on the first picture for people who prefer less motion.
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(() => setSlide((s) => ({ on: (s.on + 1) % SLIDES.length, prev: s.on, cycle: s.cycle + 1 })), HOLD);
-    return () => clearInterval(t);
-  }, []);
 
   const value = step === "pass" ? pass : confirm;
   const setValue = step === "pass" ? setPass : setConfirm;
@@ -80,16 +64,12 @@ export function Gate() {
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-black text-white" onPointerDown={() => setTimeout(() => input.current?.focus(), 0)}>
-      {/* Pictures */}
-      {SLIDES.map((s, i) => (
-        <div key={s.src} className="poster-slide absolute inset-0" data-on={i === slide.on || i === slide.prev} style={{ opacity: i === slide.on ? 1 : 0 }} aria-hidden>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a plain background picture; next/image adds nothing here */}
-          <img src={s.src} alt="" className="h-full w-full object-cover" style={{ objectPosition: `50% ${s.y}` }} fetchPriority={i === 0 ? "high" : "low"} />
-        </div>
-      ))}
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6),transparent_22%,transparent_42%,rgba(0,0,0,0.78)_68%,rgba(0,0,0,0.94))]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_55%_at_0%_100%,rgba(0,0,0,0.7),transparent_70%)]" />
-      <div className="grain pointer-events-none absolute inset-0" />
+      {/* One panorama of the four pictures, gliding slowly */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- a plain background picture; next/image adds nothing here */}
+      <img src="/unlock/panorama.webp" alt="" className="pano select-none" fetchPriority="high" draggable={false} aria-hidden />
+      {/* Only a soft shade where the words sit, so the picture stays bright */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/50 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-t from-black/85 via-black/45 to-transparent sm:h-[42%]" />
 
       <div className="relative z-10 flex h-full flex-col px-6 pb-6 pt-6 sm:px-12 sm:pb-10 sm:pt-9">
         {/* Top: wordmark and model code, like the corner of a print ad */}
@@ -107,8 +87,8 @@ export function Gate() {
           Encrypted · On this device · Yours alone
         </p>
 
-        <div className="mt-auto w-full max-w-[640px]">
-          <h1 className="text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] sm:text-[60px]">
+        <div className="mt-auto grid w-full gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:items-end lg:gap-16">
+          <h1 className="text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] [text-shadow:0_2px_24px_rgba(0,0,0,0.45)] sm:text-[52px] xl:text-[60px]">
             <span className="rise-in block" style={{ animationDelay: "0.35s" }}>
               {headline[0]}
             </span>
@@ -117,7 +97,7 @@ export function Gate() {
             </span>
           </h1>
 
-          <form onSubmit={submit} className="rise-in mt-8 sm:mt-10" style={{ animationDelay: "0.75s" }}>
+          <form onSubmit={submit} className="rise-in" style={{ animationDelay: "0.75s" }}>
             <div className="flex items-baseline justify-between">
               <label htmlFor="pass" className="label text-white/70">
                 {prompt}
@@ -170,20 +150,9 @@ export function Gate() {
           </form>
         </div>
 
-        {/* Bottom: slide counter and the small print */}
+        {/* Bottom: the small print */}
         <footer className="rise-in mt-8 flex items-end justify-between gap-6 border-t border-white/10 pt-5 sm:mt-10" style={{ animationDelay: "0.95s" }}>
-          <div className="flex items-center gap-4">
-            <span className="label num whitespace-nowrap text-white/70">
-              {String(slide.on + 1).padStart(2, "0")} / {String(SLIDES.length).padStart(2, "0")}
-            </span>
-            <div className="flex gap-1.5" aria-hidden>
-              {SLIDES.map((s, i) => (
-                <span key={s.src} className="h-px w-7 overflow-hidden bg-white/20">
-                  {i === slide.on && <span key={slide.cycle} className="block h-full origin-left bg-white" style={{ animation: `grow ${HOLD}ms linear both` }} />}
-                </span>
-              ))}
-            </div>
-          </div>
+          <span className="label hidden text-white/55 sm:inline">No sign-up · No servers · No tracking</span>
           <span className="label text-right text-white/45">
             AES-256 · <span className="hidden sm:inline">Stored only </span>on this device
           </span>

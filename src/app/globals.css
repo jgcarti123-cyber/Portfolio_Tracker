@@ -150,6 +150,53 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+/* A dark faceplate area inside any theme (the masthead): the dark tokens, locally. */
+.scope-dark {
+  color-scheme: dark;
+  --canvas: #0a0b0d;
+  --surface: #121417;
+  --raised: #272b32;
+  --sunken: rgba(255, 255, 255, 0.06);
+  --ink: #f2f3f5;
+  --ink-2: #b4b9c2;
+  --ink-3: #7c818b;
+  --line: rgba(255, 255, 255, 0.1);
+  --accent: #4d86ff;
+  --accent-ink: #7aa3ff;
+  --accent-soft: rgba(77, 134, 255, 0.18);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+}
+
+/* The masthead: a faint strip of the unlock panorama glows behind the header. */
+.masthead {
+  background:
+    linear-gradient(to bottom, rgba(8, 9, 12, 0.72), rgba(8, 9, 12, 0.86)),
+    url("/unlock/strip.webp") center 55% / cover no-repeat,
+    #0a0b0d;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px -18px rgba(0, 0, 0, 0.6);
+}
+
+/* Cards: a hairline edge and, in the dark theme, a soft light falling on the top edge. */
+.card-finish {
+  background-image: linear-gradient(180deg, var(--card-sheen), transparent 120px);
+  box-shadow: var(--shadow-card), inset 0 1px 0 var(--card-edge);
+}
+:root {
+  --card-sheen: rgba(255, 255, 255, 0);
+  --card-edge: rgba(255, 255, 255, 0);
+}
+:root[data-theme="dark"] {
+  --card-sheen: rgba(255, 255, 255, 0.028);
+  --card-edge: rgba(255, 255, 255, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --card-sheen: rgba(255, 255, 255, 0.028);
+    --card-edge: rgba(255, 255, 255, 0.06);
+  }
+}
+
 /* Engraved panel legends: small, extended, tracked capitals. */
 .label {
   font-family: var(--font-label);
@@ -481,28 +528,70 @@ p {
 
 /* ───────────── Unlock poster ───────────── */
 
-/* Each picture drifts slowly forward while it's on screen. */
-@keyframes drift {
+/* One panorama, gliding slowly through the scene: it opens on the figure (placed to the
+   right of the copy) and travels to the far end, then back. No zoom, so it stays sharp. */
+@keyframes glide {
   from {
-    transform: scale(1.06) translate3d(0, 0.6%, 0);
+    transform: translate3d(min(0px, calc(-17.4% + 64vw)), 0, 0);
   }
   to {
-    transform: scale(1.16) translate3d(0, -0.6%, 0);
+    transform: translate3d(calc(-100% + 100vw), 0, 0);
   }
 }
-.poster-slide {
-  transition: opacity 2.4s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: opacity, transform;
+.pano {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translate3d(min(0px, calc(-17.4% + 64vw)), 0, 0);
+  animation: glide 80s cubic-bezier(0.45, 0, 0.55, 1) 1.5s infinite alternate;
+  will-change: transform;
 }
-.poster-slide[data-on="true"] img {
-  animation: drift 14s linear both;
+/* Phones: the copy sits on the horizon line, so the glide opens on the darker starry stretch. */
+@keyframes glide-phone {
+  from {
+    transform: translate3d(-41%, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(-100% + 100vw), 0, 0);
+  }
+}
+@media (max-width: 640px) {
+  .pano {
+    transform: translate3d(-41%, 0, 0);
+    animation-name: glide-phone;
+    animation-duration: 50s;
+  }
 }
 
-/* Fine print grain, kept still. */
-.grain {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay;
-  opacity: 0.22;
+/* Holdings orbit: the rings turn slowly and pause while you read them. */
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.orbit-ring {
+  animation: orbit-spin 120s linear infinite;
+}
+.orbit[data-paused="true"] .orbit-ring {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbit-ring {
+    animation: none;
+  }
+}
+
+/* Waterfall steps grow out from where the previous step ended. */
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+.bar-grow {
+  animation: bar-grow 0.7s var(--ease-out-quint) both;
 }
 
 /* Copy rises in, line by line. */
@@ -569,13 +658,10 @@ p {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .poster-slide[data-on="true"] img,
+  .pano,
   .rise-in,
   .meter[data-state="error"],
   .meter[data-state="reading"] .meter-seg {
     animation: none;
-  }
-  .poster-slide {
-    transition-duration: 0.01s;
   }
 }

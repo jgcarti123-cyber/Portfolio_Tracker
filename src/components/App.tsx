@@ -7,6 +7,7 @@ import { todayMoves } from "@/lib/today";
 import { cashBalances, cashTotal } from "@/lib/cash";
 import { buildPositions, totals as sumTotals, type Totals } from "@/lib/portfolio";
 import { useMarket } from "@/lib/prices";
+import { useMood } from "@/lib/mood";
 import { AiProvider } from "@/lib/ai";
 import { StoreProvider, useStore } from "@/lib/store";
 import { ThemeProvider, useTheme } from "@/lib/theme";
@@ -18,6 +19,7 @@ import { CashCard } from "./Cash";
 import { AssetView } from "./AssetView";
 import { InsightsPage } from "./insights/InsightsPage";
 import { HoldingsMap } from "./HoldingsMap";
+import { HoldingsOrbit } from "./HoldingsOrbit";
 import { ActiveFilters, FilterButton } from "./FilterBar";
 import { Gate, Logo } from "./Gate";
 import { Highlights } from "./Highlights";
@@ -25,8 +27,9 @@ import { History } from "./History";
 import { Holdings } from "./Holdings";
 import { ImportFlow } from "./ImportFlow";
 import { NetWorthChart } from "./NetWorthChart";
-import { TodayMovers } from "./Today";
-import { Button, Card, Icon, Segmented } from "./ui";
+import { MoodStrip } from "./MoodStrip";
+import { MoversWaterfall } from "./MoversWaterfall";
+import { Button, Card, Icon, Modal, Segmented } from "./ui";
 
 export function App() {
   return (
@@ -54,6 +57,8 @@ function Portfolio() {
   const [currency, setCurrency] = useState<Currency>("INR");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [cashOpen, setCashOpen] = useState(false);
+  const mood = useMood();
   // Which screen is showing lives in browser history, so Back, Forward and refresh work.
   const [route, setRoute] = useState<Route>(readRoute);
   const openId = route.openId;
@@ -116,7 +121,7 @@ function Portfolio() {
 
   return (
     <div className={`transition-[padding] duration-300 ${assistOpen ? "lg:pr-[400px]" : ""}`}>
-      <header className="sticky top-0 z-30 border-b border-transparent bg-[color-mix(in_srgb,var(--canvas)_78%,transparent)] backdrop-blur-xl">
+      <header className="masthead scope-dark sticky top-0 z-30">
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
           <div className="flex items-center gap-3 sm:gap-4">
             <button type="button" onClick={() => go(HOME)} aria-label="Folio home" className="press">
@@ -248,23 +253,29 @@ function Portfolio() {
               </Card>
             ) : (
               <>
+                <NetWorthChart
+                  series={series}
+                  totals={totals}
+                  currency={currency}
+                  loading={loading}
+                  today={today}
+                  filtered={filtered}
+                  missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
+                />
+                <MoodStrip readings={mood.readings} missing={mood.missing} today={today} classes={[...new Set(scoped.positions.map((p) => p.asset.cls))]} currency={currency} />
                 <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-                  <NetWorthChart
-                    series={series}
-                    totals={totals}
+                  <HoldingsOrbit
+                    positions={scoped.positions}
                     currency={currency}
-                    loading={loading}
-                    today={today}
-                    filtered={filtered}
-                    missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
+                    usdInr={market.usdInr}
+                    onOpen={setOpenId}
+                    cash={filtered ? undefined : cashBalances(data)}
+                    onCash={() => setCashOpen(true)}
                   />
                   <HoldingsMap positions={scoped.positions} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} />
                 </div>
-                <div className={`grid grid-cols-1 items-stretch gap-4 ${filtered ? "" : "lg:grid-cols-2"}`}>
-                  {!filtered && <CashCard currency={currency} usdInr={market.usdInr} onSaved={notify} />}
-                  <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
-                </div>
-                <TodayMovers today={today} currency={currency} onOpen={setOpenId} />
+                <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
+                <MoversWaterfall today={today} currency={currency} moods={mood.readings} onOpen={setOpenId} />
                 <Holdings
                   positions={scoped.positions}
                   accounts={data.accounts}
@@ -302,6 +313,11 @@ function Portfolio() {
       )}
       {adding && <AddHolding onClose={() => setAdding(false)} onSaved={notify} />}
       {importing && <ImportFlow onClose={() => setImporting(false)} onSaved={notify} />}
+      {cashOpen && (
+        <Modal title="Cash" header={<span />} onClose={() => setCashOpen(false)} wide>
+          <CashCard currency={currency} usdInr={market.usdInr} onSaved={notify} />
+        </Modal>
+      )}
 
       {toast && (
         <div

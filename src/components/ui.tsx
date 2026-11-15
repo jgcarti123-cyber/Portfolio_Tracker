@@ -5,7 +5,7 @@ import type { Currency } from "@/lib/types";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-card border border-line bg-surface shadow-card ${className}`}>
+    <section className={`card-finish rounded-card border border-line bg-surface ${className}`}>
       {children}
     </section>
   );
@@ -421,7 +421,7 @@ export function Disclosure({
     } catch {}
   }
   return (
-    <section className="rounded-card border border-line bg-surface shadow-card">
+    <section className="card-finish rounded-card border border-line bg-surface">
       <button
         type="button"
         onClick={toggle}

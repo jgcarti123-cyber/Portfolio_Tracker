@@ -7,7 +7,7 @@ import type { DayValue } from "@/lib/networth";
 import type { Totals } from "@/lib/portfolio";
 import type { Today } from "@/lib/today";
 import { CLASS_META, type AssetClass, type Currency } from "@/lib/types";
-import { Delta, Icon, IconTile, Segmented } from "./ui";
+import { Segmented } from "./ui";
 
 /** Layers bottom to top: the steadiest money underneath, the jumpiest on top. */
 const LAYERS = ["cash", "mf", "in_stock", "us_stock", "crypto"] as const;
@@ -28,19 +28,45 @@ const SPANS = [
 ] as const;
 const SPAN_WORD: Record<Span, string> = { "1W": "This week", "1M": "This month", "3M": "Last 3 months", "1Y": "This year", ALL: "Since tracking began" };
 
-const PAD = { top: 10, bottom: 22, right: 48 };
+const CHART_H = 210;
+const PAD = { top: 12, bottom: 26, right: 52 };
 
-/** Width and height of a box, so the chart fills whatever space its card has. */
-function useSize<T extends HTMLElement>() {
+function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [w, setW] = useState(0);
   useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver(([e]) => setSize({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }));
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
-  return [ref, size] as const;
+  return [ref, w] as const;
+}
+
+/** Counts up from zero the first time, then glides between values. */
+function useCountUp(target: number, ms = 1100) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      from.current = target;
+      const id = requestAnimationFrame(() => setShown(target));
+      return () => cancelAnimationFrame(id);
+    }
+    const start = performance.now();
+    const origin = from.current;
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / ms);
+      const v = origin + (target - origin) * (1 - Math.pow(1 - p, 4));
+      from.current = v;
+      setShown(v);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return shown;
 }
 
 function niceMax(v: number) {
@@ -82,10 +108,25 @@ function monotone(xs: number[], ys: number[], move = true) {
   return d;
 }
 
+/** A money figure set large: a small, quiet currency sign and light digits. */
+export function BigMoney({ value, currency }: { value: number; currency: Currency }) {
+  const text = money(value, currency, { decimals: 0 });
+  const sign = text.match(/^-?[^\d-]+/)?.[0] ?? "";
+  const digits = text.slice(sign.length);
+  return (
+    <span className="num inline-flex items-start leading-none tracking-[-0.04em]" aria-label={text}>
+      <span className="mr-1.5 mt-[0.16em] text-[0.42em] font-normal opacity-55">{sign.replace("-", "")}</span>
+      <span className="font-light">
+        {value < 0 ? "−" : ""}
+        {digits}
+      </span>
+    </span>
+  );
+}
+
 /**
- * Net worth as a river: each asset type (and cash) is a layer, so the height is your total
- * and the bands show what it's made of. The dashed line is what you put in; the gap above
- * it is what the market added.
+ * The dashboard hero: net worth set large over a faint glow of the unlock panorama, with
+ * the river of asset types drawn as light trails. Hovering scrubs through the days.
  */
 export function NetWorthChart({
   series,
@@ -108,46 +149,39 @@ export function NetWorthChart({
   const [mode, setMode] = useState<Mode>("amount");
   const [span, setSpan] = useState<Span>("1M");
   const [hover, setHover] = useState<number | null>(null);
-  const [ref, size] = useSize<HTMLDivElement>();
-  const W = size.w;
-  const H = Math.max(190, size.h);
+  const [ref, W] = useWidth<HTMLDivElement>();
+  const shownTotal = useCountUp(totals.value);
 
-  // Only real days: the chart starts at the first day anything was held.
   const points = useMemo(() => {
     const want = SPAN_DAYS[span] === Infinity ? series.length : SPAN_DAYS[span];
     return series.slice(-Math.min(series.length, want));
   }, [series, span]);
   const n = points.length;
   const present = LAYERS.filter((k) => points.some((d) => layerVal(d, k) > 0));
-  const active = hover !== null && hover < n ? hover : n - 1;
   const hovering = hover !== null && hover < n;
+  const active = hovering ? hover : n - 1;
   const historyShort = series.length < 2;
 
   const plotW = Math.max(0, W - PAD.right);
-  const plotH = H - PAD.top - PAD.bottom;
+  const plotH = CHART_H - PAD.top - PAD.bottom;
   const base = PAD.top + plotH;
   const x = (i: number) => (n <= 1 ? plotW : (i / (n - 1)) * plotW);
   const maxV = niceMax(Math.max(1, ...points.map((d) => Math.max(d.value, d.invested))) * 1.06);
-  const yAmt = (v: number) => base - (v / maxV) * plotH;
-  const yMix = (f: number) => base - f * plotH;
+  const y = mode === "mix" ? (f: number) => base - f * plotH : (v: number) => base - (v / maxV) * plotH;
+  const xs = points.map((_, i) => x(i));
 
-  // Stacked boundaries per layer.
   const stacks = useMemo(() => {
     const lower = points.map(() => 0);
     return present.map((k) => {
       const lo = [...lower];
       const hi = points.map((d, i) => {
-        const v = mode === "mix" ? (d.value > 0 ? layerVal(d, k) / d.value : 0) : layerVal(d, k);
-        lower[i] += v;
+        lower[i] += mode === "mix" ? (d.value > 0 ? layerVal(d, k) / d.value : 0) : layerVal(d, k);
         return lower[i];
       });
       return { k, lo, hi };
     });
   }, [points, present, mode]);
-
-  const y = mode === "mix" ? yMix : yAmt;
-  const xs = points.map((_, i) => x(i));
-  // A day with nothing held has no mix: in "Mix %" it's a gap, not a dip to zero.
+  // A day with nothing held has no mix: in "%" it's a gap, not a dip to zero.
   const runs = useMemo(() => {
     if (mode !== "mix") return [points.map((_, i) => i)];
     const out: number[][] = [];
@@ -163,32 +197,35 @@ export function NetWorthChart({
     return out;
   }, [points, mode]);
 
-  // The visible range in three parts that always add up.
   const rangeChange = n > 1 ? points[n - 1].value - points[0].value : 0;
-  const rangeMarket = points.slice(1).reduce((a, d, i) => a + (i === n - 2 ? today.total : d.move), 0);
+  const rangeMarket = points.slice(1).reduce((acc, d, i) => acc + (i === n - 2 ? today.total : d.move), 0);
   const rangeAdded = rangeChange - rangeMarket;
   const todayPct = today.base > 0 ? (today.total / today.base) * 100 : 0;
   const a = points[active];
-  const ticks = mode === "mix" ? [0, 0.25, 0.5, 0.75, 1] : [0, maxV / 4, maxV / 2, (maxV * 3) / 4, maxV];
+  const ticks = mode === "mix" ? [0, 0.5, 1] : [0, maxV / 2, maxV];
+  const heroValue = hovering && a ? a.value : shownTotal;
+  const heroGain = hovering && a ? a.value - a.invested : totals.gain;
+  const heroCost = hovering && a ? a.invested : totals.cost;
 
   function pick(clientX: number, rect: DOMRect) {
     const px = clientX - rect.left;
     if (px < 0 || px > plotW + 8 || n < 2) return setHover(null);
     setHover(Math.max(0, Math.min(n - 1, Math.round((px / plotW) * (n - 1)))));
   }
-  function onKey(e: React.KeyboardEvent) {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    setHover(Math.max(0, Math.min(n - 1, active + (e.key === "ArrowLeft" ? -1 : 1))));
-  }
 
   return (
-    <section className="flex h-full flex-col rounded-card border border-line bg-surface p-5 shadow-card">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <IconTile color="var(--cat-3)">{Icon.wallet}</IconTile>
-          <h2 className="label text-[11.5px] text-ink">Net worth</h2>
-          {filtered && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">Filtered</span>}
+    <section className="scope-dark relative isolate overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a] px-6 pb-5 pt-5 text-ink shadow-[0_40px_90px_-40px_rgba(0,0,0,0.9)] sm:px-8 sm:pb-6 sm:pt-6">
+      {/* The unlock panorama, glowing faintly behind */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- decorative backdrop, already cached from the unlock page */}
+      <img src="/unlock/panorama.webp" alt="" aria-hidden className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-[0.38]" style={{ objectPosition: "16% 58%" }} />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(100deg,rgba(7,8,10,0.94)_0%,rgba(7,8,10,0.72)_45%,rgba(7,8,10,0.55)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-1/2 bg-gradient-to-t from-[#07080a] to-transparent" />
+
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="size-[6px] rounded-full bg-up shadow-[0_0_10px_var(--up)]" aria-hidden />
+          <h2 className="label text-[11.5px] text-white/75">Net worth</h2>
+          {filtered && <span className="label rounded-full bg-accent-soft px-2 py-0.5 text-[10px] text-accent-ink">Filtered</span>}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Segmented
@@ -196,58 +233,74 @@ export function NetWorthChart({
               { value: "amount", label: currency === "INR" ? "₹" : "$" },
               { value: "mix", label: "%" },
             ]}
-            value={mode} onChange={(m) => (setHover(null), setMode(m))} label="Show" size="sm" />
+            value={mode}
+            onChange={(m) => (setHover(null), setMode(m))}
+            label="Show"
+            size="sm"
+          />
           <Segmented options={SPANS} value={span} onChange={(s) => (setHover(null), setSpan(s))} label="Time range" size="sm" />
         </div>
       </header>
 
-      <div className="mt-3">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <p className="num text-[26px] font-extrabold leading-none tracking-[-0.025em]">{money(totals.value, currency, { decimals: 0 })}</p>
-          <Delta value={today.total}>
-            {signed(today.total, currency)} ({pct(todayPct)}) today
-          </Delta>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="min-w-0">
+          <p className="label mb-2 h-3 text-[10px] text-white/40">{hovering && a ? (active === n - 1 ? "Today" : day(a.ts, true)) : " "}</p>
+          <p className="text-[46px] text-white sm:text-[62px]">
+            <BigMoney value={heroValue} currency={currency} />
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <span className={`num inline-flex items-center gap-1.5 text-[14px] font-semibold ${today.total < 0 ? "text-down" : today.total > 0 ? "text-up" : "text-white/70"}`}>
+              <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden className={today.total < 0 ? "rotate-180" : ""}>
+                <path d="M5 1.5 9 8H1z" fill="currentColor" />
+              </svg>
+              {signed(today.total, currency)} · {pct(todayPct)} <span className="label ml-1 text-[10px] text-white/45">today</span>
+            </span>
+            <Stat label={hovering ? "Invested then" : "Invested"} value={money(heroCost, currency, { decimals: 0 })} />
+            <Stat label="Return" value={`${signed(heroGain, currency)} (${pct(heroCost > 0 ? (heroGain / heroCost) * 100 : 0)})`} tone={heroGain} />
+          </div>
         </div>
-        <p className="num mt-1.5 text-[12px] text-ink-3">
-          Invested <b className="font-semibold text-ink-2">{money(totals.cost, currency, { decimals: 0 })}</b>
-          <span className="mx-1.5">·</span>
-          Return{" "}
-          <b className={`font-semibold ${totals.gain < 0 ? "text-down" : totals.gain > 0 ? "text-up" : "text-ink-2"}`}>
-            {signed(totals.gain, currency)} ({pct(totals.cost > 0 ? (totals.gain / totals.cost) * 100 : 0)})
-          </b>
-        </p>
       </div>
 
       <div
         ref={ref}
-        className="relative mt-3 min-h-[190px] flex-1 touch-pan-y outline-none"
-        tabIndex={0}
+        className="relative mt-4 touch-pan-y"
+        style={{ height: CHART_H }}
         role="img"
-        aria-label={`Net worth by asset type, ${SPAN_WORD[span].toLowerCase()}. Use the arrow keys to read each day.`}
-        onKeyDown={onKey}
+        aria-label={`Net worth by asset type, ${SPAN_WORD[span].toLowerCase()}. Hover to read each day.`}
         onPointerMove={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
         onPointerLeave={() => setHover(null)}
-        onBlur={() => setHover(null)}
       >
         {loading && !series.length ? (
-          <div className="skeleton absolute inset-0 top-4" />
+          <div className="absolute inset-0 animate-pulse rounded-2xl bg-white/[0.04]" />
         ) : historyShort ? (
-          <EmptyHistory />
+          <div className="absolute inset-0 grid place-items-center rounded-2xl bg-white/[0.03] px-6 text-center ring-1 ring-white/10">
+            <div className="max-w-[340px]">
+              <p className="text-sm font-semibold">Your river starts today</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-white/60">Folio only draws real history. A little more of it appears every day.</p>
+            </div>
+          </div>
         ) : (
           W > 0 && (
-            <svg width={W} height={H} className="absolute inset-0 block overflow-visible" key={`${mode}-${span}`}>
+            <svg width={W} height={CHART_H} className="absolute inset-0 block overflow-visible" key={`${mode}-${span}`}>
               <defs>
+                <filter id="trail-glow" x="-5%" y="-40%" width="110%" height="180%">
+                  <feGaussianBlur stdDeviation="3.2" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
                 {present.map((k) => (
-                  <linearGradient key={k} id={`nw-${k}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={layerColor(k)} stopOpacity={0.95} />
-                    <stop offset="100%" stopColor={layerColor(k)} stopOpacity={0.7} />
+                  <linearGradient key={k} id={`trail-${k}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={layerColor(k)} stopOpacity={0.55} />
+                    <stop offset="100%" stopColor={layerColor(k)} stopOpacity={0.08} />
                   </linearGradient>
                 ))}
               </defs>
               {ticks.map((t) => (
                 <g key={t}>
-                  <line x1={0} x2={plotW} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray={t === 0 ? undefined : "2 5"} />
-                  <text x={W} y={y(t) + 4} textAnchor="end" className="num fill-ink-3 text-[11px]">
+                  <line x1={0} x2={plotW} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,0.08)" strokeDasharray={t === 0 ? undefined : "1 6"} />
+                  <text x={W} y={y(t) + 4} textAnchor="end" className="num fill-white/35 text-[10.5px]">
                     {mode === "mix" ? `${Math.round(t * 100)}%` : compact(t, currency)}
                   </text>
                 </g>
@@ -257,7 +310,6 @@ export function NetWorthChart({
                   <g key={k}>
                     {runs.map((run) => {
                       const rx = run.map((i) => xs[i]);
-                      // A single day is drawn as a thin column so it stays visible.
                       const px = rx.length === 1 ? [rx[0] - 3, rx[0] + 3] : rx;
                       const ph = rx.length === 1 ? [hi[run[0]], hi[run[0]]] : run.map((i) => hi[i]);
                       const pl = rx.length === 1 ? [lo[run[0]], lo[run[0]]] : run.map((i) => lo[i]);
@@ -265,9 +317,9 @@ export function NetWorthChart({
                       const bottom = monotone([...px].reverse(), [...pl].reverse().map(y), false);
                       return (
                         <g key={run[0]}>
-                          <path d={`${top}${bottom}Z`} fill={`url(#nw-${k})`} />
-                          {/* A thin surface line keeps adjacent layers crisp */}
-                          <path d={top} fill="none" stroke="var(--surface)" strokeWidth={1.5} />
+                          <path d={`${top}${bottom}Z`} fill={`url(#trail-${k})`} />
+                          {/* The bright edge of each layer, glowing like a light trail */}
+                          <path d={top} fill="none" stroke={layerColor(k)} strokeWidth={1.6} filter="url(#trail-glow)" pathLength={1} className="draw" />
                         </g>
                       );
                     })}
@@ -278,123 +330,80 @@ export function NetWorthChart({
                 <path
                   d={monotone(
                     xs,
-                    points.map((d) => yAmt(d.invested)),
+                    points.map((d) => y(d.invested)),
                   )}
                   fill="none"
-                  stroke="var(--ink)"
-                  strokeOpacity={0.55}
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
+                  stroke="rgba(255,255,255,0.5)"
+                  strokeWidth={1.2}
+                  strokeDasharray="3 5"
                 />
               )}
-              {/* Day under the cursor */}
-              <line x1={x(active)} x2={x(active)} y1={PAD.top} y2={base} stroke="var(--ink)" strokeOpacity={hovering ? 0.35 : 0} />
-              {hovering &&
-                stacks.map(({ k, hi }) => <circle key={k} cx={x(active)} cy={y(hi[active])} r={3.5} fill={layerColor(k)} stroke="var(--surface)" strokeWidth={2} />)}
-              <XLabels points={points} x={x} height={H} width={plotW} active={hovering ? active : -1} />
+              {hovering && (
+                <g>
+                  <line x1={x(active)} x2={x(active)} y1={PAD.top} y2={base} stroke="rgba(255,255,255,0.35)" />
+                  {stacks.map(({ k, hi }) => (
+                    <circle key={k} cx={x(active)} cy={y(hi[active])} r={4} fill={layerColor(k)} stroke="#07080a" strokeWidth={2} style={{ filter: `drop-shadow(0 0 6px ${layerColor(k)})` }} />
+                  ))}
+                </g>
+              )}
+              {points.map((d, i) => {
+                const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 90))));
+                const show = i === n - 1 || (i % every === 0 && x(n - 1) - x(i) > 90);
+                if (!show) return null;
+                return (
+                  <text key={d.ts} x={x(i)} y={CHART_H - 6} textAnchor={i === n - 1 ? "end" : i === 0 ? "start" : "middle"} className="label fill-white/35 text-[9.5px]">
+                    {i === n - 1 ? "Today" : day(d.ts)}
+                  </text>
+                );
+              })}
             </svg>
           )
         )}
-        {hovering && a && (
-          <div
-            className="pointer-events-none absolute z-10 whitespace-nowrap rounded-xl px-3 py-2 text-white shadow-pop"
-            style={{
-              background: "var(--tip)",
-              left: Math.max(0, Math.min(x(active) + (x(active) > plotW / 2 ? -188 : 14), plotW - 176)),
-              top: 4,
-              width: 176,
-            }}
-          >
-            <p className="text-[10.5px] font-medium text-white/60">{active === n - 1 ? "Today" : day(a.ts, true)}</p>
-            <p className="num text-[14px] font-bold">{money(a.value, currency, { decimals: 0 })}</p>
-            <p className={`num text-[11px] font-semibold ${a.value - a.invested >= 0 ? "text-[#5fdc9a]" : "text-[#ff8a92]"}`}>
-              {signed(a.value - a.invested, currency)} vs invested
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Legend doubles as the readout for the day under the cursor */}
       {!historyShort && a && (
-        <div className="mt-2.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="text-[11.5px] font-semibold text-ink">{hovering ? (active === n - 1 ? "Today" : day(a.ts, true)) : "Today"}</span>
-            {[...present].reverse().map((k) => {
-              const v = layerVal(a, k);
-              return (
-                <span key={k} className="flex items-center gap-1 text-[11.5px] text-ink-3">
-                  <span className="size-2 rounded-[2px]" style={{ background: layerColor(k) }} />
-                  {layerLabel(k)}
-                  <b className="num font-semibold text-ink-2">{mode === "mix" ? `${a.value > 0 ? Math.round((v / a.value) * 100) : 0}%` : compact(v, currency)}</b>
-                </span>
-              );
-            })}
-            {mode === "amount" && (
-              <span className="flex items-center gap-1 text-[11.5px] text-ink-3">
-                <span className="w-3.5 border-t-2 border-dashed border-ink-3" />
-                Invested <b className="num font-semibold text-ink-2">{compact(a.invested, currency)}</b>
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+          {[...present].reverse().map((k) => {
+            const v = layerVal(a, k);
+            return (
+              <span key={k} className="flex items-center gap-2 text-[12px] text-white/55">
+                <span className="h-[3px] w-4 rounded-full" style={{ background: layerColor(k), boxShadow: `0 0 8px ${layerColor(k)}` }} />
+                {layerLabel(k)}
+                <b className="num font-semibold text-white/90">{mode === "mix" ? `${a.value > 0 ? Math.round((v / a.value) * 100) : 0}%` : compact(v, currency)}</b>
               </span>
-            )}
-          </div>
+            );
+          })}
+          {mode === "amount" && (
+            <span className="flex items-center gap-2 text-[12px] text-white/55">
+              <span className="w-4 border-t border-dashed border-white/50" />
+              Invested <b className="num font-semibold text-white/90">{compact(a.invested, currency)}</b>
+            </span>
+          )}
         </div>
       )}
+
       {!historyShort && n > 1 && (
-        <p className="num mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-[11.5px] text-ink-3">
-          <span>
-            {SPAN_WORD[span]} <b className={`font-bold ${rangeChange >= 0 ? "text-up" : "text-down"}`}>{signed(rangeChange, currency)}</b>
-          </span>
-          <span>
-            from the market <b className={`font-bold ${rangeMarket >= 0 ? "text-up" : "text-down"}`}>{signed(rangeMarket, currency)}</b>
-          </span>
-          <span title="Value of holdings you added, minus anything you sold">
-            added by you <b className="font-bold text-ink">{signed(rangeAdded, currency)}</b>
-          </span>
-          {series.length < SPAN_DAYS[span] && span !== "ALL" && <span className="ml-auto">Tracking since {day(series[0].ts, true)}</span>}
-        </p>
+        <div className="mt-5 grid grid-cols-1 gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
+          <Stat label={SPAN_WORD[span]} value={signed(rangeChange, currency)} tone={rangeChange} />
+          <Stat label="From the market" value={signed(rangeMarket, currency)} tone={rangeMarket} />
+          <Stat label="Added by you" value={signed(rangeAdded, currency)} />
+        </div>
       )}
       {missingHistory.length > 0 && (
-        <p className="mt-3 rounded-xl bg-down-soft/60 px-3 py-2 text-xs text-ink-2">
+        <p className="mt-3 rounded-xl bg-down-soft/40 px-3 py-2 text-xs text-white/70">
           Price history for {missingHistory.slice(0, 3).join(", ")}
-          {missingHistory.length > 3 ? ` and ${missingHistory.length - 3} more` : ""} couldn&apos;t load, so past days use the price you bought at. Today&apos;s figures are
-          unaffected. Reload to try again.
+          {missingHistory.length > 3 ? ` and ${missingHistory.length - 3} more` : ""} couldn&apos;t load, so past days use the price you bought at. Reload to try again.
         </p>
       )}
     </section>
   );
 }
 
-function XLabels({ points, x, height, width, active }: { points: DayValue[]; x: (i: number) => number; height: number; width: number; active: number }) {
-  const n = points.length;
-  // About one label per 80px, so they never run together on a phone.
-  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(width / 80))));
+function Stat({ label, value, tone }: { label: string; value: string; tone?: number }) {
   return (
-    <g>
-      {points.map((d, i) => {
-        const show = i === n - 1 || (i % every === 0 && x(n - 1) - x(i) > 56);
-        if (!show) return null;
-        return (
-          <text
-            key={d.ts}
-            x={x(i)}
-            y={height - 6}
-            textAnchor={i === n - 1 ? "end" : i === 0 ? "start" : "middle"}
-            className={`text-[11px] ${i === active ? "fill-ink font-semibold" : "fill-ink-3"}`}
-          >
-            {i === n - 1 ? "Today" : day(d.ts)}
-          </text>
-        );
-      })}
-    </g>
-  );
-}
-
-function EmptyHistory() {
-  return (
-    <div className="absolute inset-0 top-2 grid place-items-center rounded-2xl bg-sunken/60 px-6 text-center ring-1 ring-line">
-      <div className="max-w-[340px]">
-        <p className="text-sm font-semibold">Your chart starts today</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-ink-2">Folio only draws real history, from the day you added each holding or its buy date. The river grows a little every day.</p>
-      </div>
-    </div>
+    <span className="flex items-baseline gap-2">
+      <span className="label text-[10px] text-white/40">{label}</span>
+      <span className={`num text-[14px] font-semibold ${tone === undefined || Math.abs(tone) < 1e-9 ? "text-white/90" : tone > 0 ? "text-up" : "text-down"}`}>{value}</span>
+    </span>
   );
 }

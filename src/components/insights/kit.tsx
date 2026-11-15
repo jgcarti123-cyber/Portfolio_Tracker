@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-/** Width and height of a box, so a chart fills whatever space its card gives it. */
+/**
+ * Width and height of a box, so a chart fills whatever space its card gives it. Uses a
+ * callback ref, so it starts measuring whenever the box appears — even if the component's
+ * first render showed something else (a loading state, or nothing).
+ */
 export function useSize<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
+  const [el, setEl] = useState<T | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
-    if (!ref.current) return;
+    if (!el) return;
     const ro = new ResizeObserver(([e]) => setSize({ w: Math.round(e.contentRect.width), h: Math.round(e.contentRect.height) }));
-    ro.observe(ref.current);
+    ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-  return [ref, size] as const;
+  }, [el]);
+  return [setEl, size] as const;
 }
 
 /** The one-sentence finding at the top of each chart. Wrap figures in <b>. */

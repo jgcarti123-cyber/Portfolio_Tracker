@@ -5,6 +5,7 @@
  *   crypto  -> CoinGecko
  *   funds   -> mfapi.in (AMFI NAVs)
  *   USD/INR -> Frankfurter (ECB reference rates)
+ *   mood    -> alternative.me (crypto), Tickertape MMI (India), VIX via Yahoo (US)
  */
 import type { AssetClass, Candle, Currency, Quote, Range, SearchHit } from "@/lib/types";
 
@@ -278,5 +279,101 @@ export async function fx(): Promise<{ rate: number; series: { t: number; c: numb
       .sort((a, b) => a.t - b.t);
     if (!series.length) throw new Error("No FX data");
     return { rate: series[series.length - 1].c, series };
+  });
+}
+
+/* ----------------------------- Market mood ----------------------------- */
+
+/** One market's mood reading: a 0–100 index (or VIX level), its band, and earlier readings to compare. */
+export interface MoodReading {
+  key: "crypto" | "india" | "us";
+  /** Index name as published. */
+  source: string;
+  value: number;
+  /** Published label for 0–100 indices; for VIX, the conventional band. */
+  label: string;
+  /** "index" = 0–100, higher is greed; "vix" = volatility level, higher is fear. */
+  scale: "index" | "vix";
+  weekAgo: number | null;
+  monthAgo: number | null;
+  asOf: number;
+  /** Up to 30 recent daily readings, oldest first (when the source provides them). */
+  history: { t: number; v: number }[];
+}
+
+const vixLabel = (v: number) => (v < 15 ? "Calm" : v < 20 ? "Normal" : v < 30 ? "Nervous" : "Fearful");
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
+
+async function cryptoMood(): Promise<MoodReading> {
+  const j = await getJson<{ data: { value: string; value_classification: string; timestamp: string }[] }>("https://api.alternative.me/fng/?limit=31");
+  const d = j.data;
+  if (!d?.length) throw new Error("No crypto mood");
+  return {
+    key: "crypto",
+    source: "Crypto Fear & Greed Index (alternative.me)",
+    value: Number(d[0].value),
+    label: d[0].value_classification.replace(/^(\w)(.*)$/, (_, a: string, b: string) => a + b.toLowerCase()),
+    scale: "index",
+    weekAgo: d[7] ? Number(d[7].value) : null,
+    monthAgo: d[30] ? Number(d[30].value) : null,
+    asOf: Number(d[0].timestamp) * 1000,
+    history: d
+      .slice(0, 30)
+      .map((x) => ({ t: Number(x.timestamp) * 1000, v: Number(x.value) }))
+      .reverse(),
+  };
+}
+
+async function indiaMood(): Promise<MoodReading> {
+  const res = await fetch("https://api.tickertape.in/mmi/now", { headers: { "user-agent": BROWSER_UA, accept: "application/json" }, signal: AbortSignal.timeout(12_000), cache: "no-store" });
+  if (!res.ok) throw new Error(`${res.status} from tickertape`);
+  const j = (await res.json()) as { data: { date: string; indicator: number; lastWeek?: { indicator: number }; lastMonth?: { indicator: number } } };
+  const d = j.data;
+  return {
+    key: "india",
+    source: "Market Mood Index (Tickertape)",
+    value: Math.round(d.indicator * 10) / 10,
+    // Tickertape's own zones: under 30 extreme fear, 30–50 fear, 50–70 greed, above 70 extreme greed.
+    label: d.indicator < 30 ? "Extreme fear" : d.indicator < 50 ? "Fear" : d.indicator < 70 ? "Greed" : "Extreme greed",
+    scale: "index",
+    weekAgo: d.lastWeek ? Math.round(d.lastWeek.indicator * 10) / 10 : null,
+    monthAgo: d.lastMonth ? Math.round(d.lastMonth.indicator * 10) / 10 : null,
+    asOf: Date.parse(d.date),
+    history: [],
+  };
+}
+
+async function usMood(): Promise<MoodReading> {
+  const c = await yahooHistory("^VIX", "1M");
+  if (!c.length) throw new Error("No VIX");
+  const last = c[c.length - 1];
+  const at = (days: number) => {
+    const target = last.t - days * 86400;
+    const hit = [...c].reverse().find((x) => x.t <= target);
+    return hit ? Math.round(hit.c * 10) / 10 : null;
+  };
+  return {
+    key: "us",
+    source: "CBOE Volatility Index (VIX)",
+    value: Math.round(last.c * 10) / 10,
+    label: vixLabel(last.c),
+    scale: "vix",
+    weekAgo: at(7),
+    monthAgo: at(28),
+    asOf: last.t * 1000,
+    history: c.map((x) => ({ t: x.t * 1000, v: Math.round(x.c * 10) / 10 })),
+  };
+}
+
+/** Mood for each market; a market whose source fails is simply missing (never guessed). */
+export async function mood(): Promise<{ readings: MoodReading[]; missing: MoodReading["key"][] }> {
+  return cached("mood", 30 * MIN, async () => {
+    const keys = ["crypto", "india", "us"] as const;
+    const results = await Promise.allSettled([cryptoMood(), indiaMood(), usMood()]);
+    const readings: MoodReading[] = [];
+    const missing: MoodReading["key"][] = [];
+    results.forEach((r, i) => (r.status === "fulfilled" ? readings.push(r.value) : missing.push(keys[i])));
+    if (!readings.length) throw new Error("No mood sources answered");
+    return { readings, missing };
   });
 }
