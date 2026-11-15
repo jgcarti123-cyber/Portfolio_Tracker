@@ -6,6 +6,7 @@ import { buildSeries, useCloses } from "@/lib/networth";
 import { todayMoves } from "@/lib/today";
 import { cashBalances, cashTotal } from "@/lib/cash";
 import { buildPositions, totals as sumTotals, type Totals } from "@/lib/portfolio";
+import { compact } from "@/lib/format";
 import { useMarket } from "@/lib/prices";
 import { useMood } from "@/lib/mood";
 import { AiProvider } from "@/lib/ai";
@@ -27,7 +28,7 @@ import { History } from "./History";
 import { Holdings } from "./Holdings";
 import { ImportFlow } from "./ImportFlow";
 import { NetWorthChart } from "./NetWorthChart";
-import { MoodStrip } from "./MoodStrip";
+import { DashboardLens } from "./DashboardLens";
 import { MoversWaterfall } from "./MoversWaterfall";
 import { Button, Card, Icon, Modal, Segmented } from "./ui";
 
@@ -261,21 +262,45 @@ function Portfolio() {
                   today={today}
                   filtered={filtered}
                   missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
+                  moods={mood.readings}
+                  classes={[...new Set(scoped.positions.map((p) => p.asset.cls))]}
                 />
-                <MoodStrip readings={mood.readings} missing={mood.missing} today={today} classes={[...new Set(scoped.positions.map((p) => p.asset.cls))]} currency={currency} />
-                <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-                  <HoldingsOrbit
-                    positions={scoped.positions}
-                    currency={currency}
-                    usdInr={market.usdInr}
-                    onOpen={setOpenId}
-                    cash={filtered ? undefined : cashBalances(data)}
-                    onCash={() => setCashOpen(true)}
-                  />
-                  <HoldingsMap positions={scoped.positions} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} />
-                </div>
-                <Highlights series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />
-                <MoversWaterfall today={today} currency={currency} moods={mood.readings} onOpen={setOpenId} />
+                <DashboardLens
+                  tabs={[
+                    {
+                      key: "movers",
+                      label: "Today's movers",
+                      badge: (
+                        <span className={`num text-[11.5px] font-semibold ${today.total < 0 ? "text-down" : today.total > 0 ? "text-up" : "text-ink-3"}`}>
+                          {today.total < 0 ? "−" : "+"}
+                          {compact(Math.abs(today.total), currency)}
+                        </span>
+                      ),
+                      render: () => <MoversWaterfall bare today={today} currency={currency} moods={mood.readings} closes={closes} onOpen={setOpenId} />,
+                    },
+                    {
+                      key: "orbit",
+                      label: "Orbit",
+                      render: () => (
+                        <HoldingsOrbit
+                          bare
+                          positions={scoped.positions}
+                          currency={currency}
+                          usdInr={market.usdInr}
+                          onOpen={setOpenId}
+                          cash={filtered ? undefined : cashBalances(data)}
+                          onCash={() => setCashOpen(true)}
+                        />
+                      ),
+                    },
+                    { key: "map", label: "Map", render: () => <HoldingsMap bare positions={scoped.positions} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} /> },
+                    {
+                      key: "highlights",
+                      label: "Highlights",
+                      render: () => <Highlights bare series={series} positions={scoped.positions} today={today} currency={currency} usdInr={market.usdInr} closes={closes} onOpen={setOpenId} />,
+                    },
+                  ]}
+                />
                 <Holdings
                   positions={scoped.positions}
                   accounts={data.accounts}

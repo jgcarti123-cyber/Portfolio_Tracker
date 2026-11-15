@@ -105,7 +105,7 @@ export function AssetView({
 
   // Funds publish one NAV a day, so there are no candles to draw.
   const lineOnly = !!candles?.length && candles.every((c) => c.o === c.c && c.h === c.l);
-  const dayChange = position?.price && position.prevClose ? position.price - position.prevClose : null;
+  const dayChange = position?.price && position.prevClose && !position.closedToday ? position.price - position.prevClose : null;
 
   function saveManual(e: React.FormEvent) {
     e.preventDefault();
@@ -148,6 +148,8 @@ export function AssetView({
               <p className="mt-2 text-xs text-ink-2">
                 {position?.priceSource === "manual" ? (
                   <>entered by you, {position.priceTs ? dateTime(position.priceTs) : ""}</>
+                ) : position?.closedToday ? (
+                  <>Market closed today</>
                 ) : dayChange !== null && position?.prevClose ? (
                   <Delta value={dayChange}>
                     {signed(dayChange, cur)} ({pct((dayChange / position.prevClose) * 100)}) today

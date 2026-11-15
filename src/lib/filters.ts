@@ -1,4 +1,4 @@
-import { convert, type Position } from "./portfolio";
+import { convert, dayPct, type Position } from "./portfolio";
 import type { AssetClass, Currency, VaultData } from "./types";
 
 export type Show = "all" | "profit" | "loss" | "up" | "down";
@@ -122,7 +122,7 @@ export function sortPositions(list: Position[], s: Sort, display: Currency, usdI
       case "return":
         return p.gain !== null && p.cost > 0 ? p.gain / p.cost : -Infinity;
       case "today":
-        return p.price !== null && p.prevClose ? (p.price - p.prevClose) / p.prevClose : -Infinity;
+        return dayPct(p) ?? -Infinity;
       default:
         return inDisplay(p, p.value ?? p.cost);
     }

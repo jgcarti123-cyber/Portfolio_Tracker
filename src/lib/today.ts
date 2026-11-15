@@ -1,5 +1,6 @@
 import { convert, type Position } from "./portfolio";
 import type { Market } from "./prices";
+import { zoned } from "./session";
 import { CLASS_ORDER, type AssetClass, type Currency } from "./types";
 
 export interface Mover {
@@ -37,6 +38,8 @@ export interface Today {
   byClass: ClassMoves[];
   /** Holdings with no daily price (price you entered, or no feed). */
   noDaily: Position[];
+  /** Markets you hold that haven't traded today (weekend, holiday, or today's NAV not out yet). */
+  closed: AssetClass[];
   /** Change from the dollar–rupee rate moving, in the display currency. 0 when the rate hasn't moved today. */
   fx: { amount: number; from: number; to: number } | null;
   /** Dollar–rupee rate used for the conversion. */
@@ -48,24 +51,6 @@ const MARKETS: Partial<Record<AssetClass, { tz: string; open: [number, number]; 
   us_stock: { tz: "America/New_York", open: [9, 30], close: [16, 0], name: "NYSE/Nasdaq" },
 };
 
-/** Calendar date, weekday and minutes since midnight of a moment, in a market's own timezone. */
-function zoned(ts: number, tz: string) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      weekday: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(new Date(ts))
-      .map((p) => [p.type, p.value]),
-  );
-  return { ymd: `${parts.year}-${parts.month}-${parts.day}`, weekday: parts.weekday, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
-}
 
 const shortDay = (ts: number, tz?: string) =>
   new Date(ts).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: tz });
@@ -119,6 +104,11 @@ export function todayMoves(
   let base = 0;
   for (const p of positions) {
     const valueNow = p.value ?? p.cost;
+    if (p.closedToday) {
+      // Its market hasn't traded today: nothing moved, and it isn't shown as a mover at all.
+      base += convert(valueNow, p.asset.currency, display, fxNow);
+      continue;
+    }
     if (p.dayChange === null || p.price === null || !p.prevClose) {
       noDaily.push(p);
       base += convert(valueNow, p.asset.currency, display, fxNow);
@@ -174,6 +164,7 @@ export function todayMoves(
     movers,
     byClass,
     noDaily,
+    closed: CLASS_ORDER.filter((c) => positions.some((p) => p.asset.cls === c && p.closedToday) && !byClass.some((b) => b.cls === c)),
     fx,
     rate: fxNow,
   };

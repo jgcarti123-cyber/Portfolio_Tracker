@@ -3,7 +3,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Currency } from "@/lib/types";
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Card({ children, className = "", bare = false }: { children: ReactNode; className?: string; bare?: boolean }) {
+  // Bare: no frame or padding, for a view shown inside another card (the dashboard lens).
+  if (bare) return <div className="flex h-full min-w-0 flex-col">{children}</div>;
   return (
     <section className={`card-finish rounded-card border border-line bg-surface ${className}`}>
       {children}
@@ -28,12 +30,16 @@ export function CardHead({
   color = "var(--accent)",
   title,
   children,
+  bare = false,
 }: {
   icon: ReactNode;
   color?: string;
   title: string;
   children?: ReactNode;
+  bare?: boolean;
 }) {
+  // Bare: the title is shown elsewhere (a tab); keep only the extras on the right.
+  if (bare) return children ? <div className="flex flex-wrap items-center justify-end gap-3">{children}</div> : null;
   return (
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2.5">

@@ -1,3 +1,4 @@
+import { tradedToday } from "./session";
 import { quoteKey, type Asset, type Currency, type Quote, type Txn, type VaultData } from "./types";
 
 export interface Position {
@@ -11,7 +12,10 @@ export interface Position {
   priceTs: number | null;
   prevClose: number | null;
   value: number | null;
+  /** Today's move (units × (price − previous close)); null with no daily price or when its market hasn't traded today. */
   dayChange: number | null;
+  /** A live price exists but its market hasn't traded today (weekend, holiday, or today's NAV not out yet). */
+  closedToday: boolean;
   gain: number | null;
   /** qty per account */
   byAccount: Record<string, number>;
@@ -41,7 +45,12 @@ export function replay(txns: Txn[]) {
   return { qty, cost, byAccount };
 }
 
-export function buildPositions(data: VaultData, quotes: Record<string, Quote>): Position[] {
+/** Today's price change in %, or null when there's no daily price or the market hasn't traded today. */
+export function dayPct(p: Pick<Position, "price" | "prevClose" | "closedToday">) {
+  return p.price !== null && p.prevClose && !p.closedToday ? (p.price / p.prevClose - 1) * 100 : null;
+}
+
+export function buildPositions(data: VaultData, quotes: Record<string, Quote>, now = Date.now()): Position[] {
   return data.assets
     .map((asset) => {
       const txns = data.txns.filter((t) => t.assetId === asset.id);
@@ -69,6 +78,7 @@ export function buildPositions(data: VaultData, quotes: Record<string, Quote>): 
       }
 
       const value = price === null ? null : qty * price;
+      const closedToday = priceSource === "live" && price !== null && !tradedToday(asset.cls, priceTs, now);
       return {
         asset,
         qty,
@@ -79,7 +89,8 @@ export function buildPositions(data: VaultData, quotes: Record<string, Quote>): 
         priceTs,
         prevClose,
         value,
-        dayChange: price !== null && prevClose !== null ? qty * (price - prevClose) : null,
+        dayChange: price !== null && prevClose !== null && !closedToday ? qty * (price - prevClose) : null,
+        closedToday,
         gain: value === null ? null : value - cost,
         byAccount,
       };

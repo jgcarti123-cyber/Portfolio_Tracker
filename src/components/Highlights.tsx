@@ -29,6 +29,7 @@ export function Highlights({
   usdInr,
   closes,
   onOpen,
+  bare = false,
 }: {
   series: DayValue[];
   positions: Position[];
@@ -37,6 +38,7 @@ export function Highlights({
   usdInr: number;
   closes: Record<string, Candle[]>;
   onOpen: (id: string) => void;
+  bare?: boolean;
 }) {
   const inDisplay = (p: Position, n: number) => convert(n, p.asset.currency, currency, usdInr);
   // "Now" is the latest point of the net-worth history (built from the current time), so render stays pure.
@@ -86,13 +88,13 @@ export function Highlights({
   const worstDay = thisMonth.length ? thisMonth.reduce((a, b) => (b.move < a.move ? b : a)) : null;
 
   return (
-    <Card className="p-5 sm:p-6">
-      <header className="flex items-center gap-2.5">
+    <Card className="p-5 sm:p-6" bare={bare}>
+      <header className={`flex items-center gap-2.5 ${bare ? "hidden" : ""}`}>
         <IconTile color="var(--cat-2)">{ico("M8 1.8l1.8 3.9 4.2.5-3.1 2.9.8 4.2L8 11.2l-3.7 2.1.8-4.2L2 6.2l4.2-.5z")}</IconTile>
         <h2 className="label text-[11.5px] text-ink">Highlights</h2>
       </header>
 
-      <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-line">
+      <div className={`${bare ? "" : "mt-5"} grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-line`}>
         {/* 1-year ranges */}
         <Panel title="Where they sit in their 1-year range" first>
           {ranges.length ? (

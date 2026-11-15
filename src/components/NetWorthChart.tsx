@@ -7,6 +7,8 @@ import type { DayValue } from "@/lib/networth";
 import type { Totals } from "@/lib/portfolio";
 import type { Today } from "@/lib/today";
 import { CLASS_META, type AssetClass, type Currency } from "@/lib/types";
+import { MOOD_FOR, MOOD_NAME, moodColor, moodPosition, type MoodReading } from "@/lib/mood";
+import { MoodGauge } from "./MoodStrip";
 import { Segmented } from "./ui";
 
 /** Layers bottom to top: the steadiest money underneath, the jumpiest on top. */
@@ -28,7 +30,7 @@ const SPANS = [
 ] as const;
 const SPAN_WORD: Record<Span, string> = { "1W": "This week", "1M": "This month", "3M": "Last 3 months", "1Y": "This year", ALL: "Since tracking began" };
 
-const CHART_H = 210;
+const CHART_H = 180;
 const PAD = { top: 12, bottom: 26, right: 52 };
 
 function useWidth<T extends HTMLElement>() {
@@ -136,6 +138,8 @@ export function NetWorthChart({
   today,
   filtered,
   missingHistory,
+  moods = [],
+  classes = [],
 }: {
   series: DayValue[];
   totals: Totals;
@@ -145,7 +149,11 @@ export function NetWorthChart({
   filtered: boolean;
   /** Holdings whose price history couldn't be loaded. */
   missingHistory: string[];
+  /** Market mood readings, shown along the bottom for the markets you hold. */
+  moods?: MoodReading[];
+  classes?: AssetClass[];
 }) {
+  const moodKeys = (["crypto", "india", "us"] as const).filter((k) => classes.some((c) => MOOD_FOR[c] === k));
   const [mode, setMode] = useState<Mode>("amount");
   const [span, setSpan] = useState<Span>("1M");
   const [hover, setHover] = useState<number | null>(null);
@@ -259,6 +267,13 @@ export function NetWorthChart({
             <Stat label="Return" value={`${signed(heroGain, currency)} (${pct(heroCost > 0 ? (heroGain / heroCost) * 100 : 0)})`} tone={heroGain} />
           </div>
         </div>
+        {!historyShort && n > 1 && (
+          <dl className="grid w-full grid-cols-3 gap-x-3 gap-y-1 sm:w-auto sm:shrink-0 sm:gap-x-6 lg:grid-cols-1 lg:text-right">
+            <Period label={SPAN_WORD[span]} value={signed(rangeChange, currency)} tone={rangeChange} />
+            <Period label="From the market" value={signed(rangeMarket, currency)} tone={rangeMarket} />
+            <Period label="Added by you" value={signed(rangeAdded, currency)} />
+          </dl>
+        )}
       </div>
 
       <div
@@ -362,7 +377,7 @@ export function NetWorthChart({
       </div>
 
       {!historyShort && a && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           {[...present].reverse().map((k) => {
             const v = layerVal(a, k);
             return (
@@ -382,11 +397,51 @@ export function NetWorthChart({
         </div>
       )}
 
-      {!historyShort && n > 1 && (
-        <div className="mt-5 grid grid-cols-1 gap-3 border-t border-white/10 pt-4 sm:grid-cols-3">
-          <Stat label={SPAN_WORD[span]} value={signed(rangeChange, currency)} tone={rangeChange} />
-          <Stat label="From the market" value={signed(rangeMarket, currency)} tone={rangeMarket} />
-          <Stat label="Added by you" value={signed(rangeAdded, currency)} />
+      {moodKeys.length > 0 && (
+        <div className={`mt-4 grid grid-cols-1 gap-3 border-t border-white/10 pt-4 ${moodKeys.length === 3 ? "md:grid-cols-3" : moodKeys.length === 2 ? "md:grid-cols-2" : ""} md:gap-0 md:divide-x md:divide-white/10`}>
+          {moodKeys.map((k, i) => {
+            const r = moods.find((x) => x.key === k);
+            const yours = today.byClass.filter((c) => MOOD_FOR[c.cls] === k).reduce((acc, c) => acc + c.total, 0);
+            const pos = r ? moodPosition(r) : 0.5;
+            const delta = r && r.weekAgo !== null ? r.value - r.weekAgo : null;
+            return (
+              <div key={k} className={`flex items-center gap-3 ${i ? "md:pl-5" : ""} ${i < moodKeys.length - 1 ? "md:pr-5" : ""}`} title={r?.source}>
+                {r ? <MoodGauge reading={r} size={44} /> : <span className="size-[44px]" />}
+                <div className="min-w-0 flex-1">
+                  <p className="label truncate text-[9.5px] text-white/45">
+                    {MOOD_NAME[k]} mood{r?.scale === "vix" ? " · VIX" : ""}
+                  </p>
+                  {r ? (
+                    <p className="mt-0.5 flex items-baseline gap-2 whitespace-nowrap">
+                      <span className="num text-[18px] font-light leading-none">{r.value}</span>
+                      <span className="text-[12px] font-semibold" style={{ color: moodColor(pos) }}>
+                        {r.label}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[12px] text-white/45">Unavailable</p>
+                  )}
+                  {delta !== null && (
+                    <p className="num mt-0.5 text-[10.5px] text-white/40">
+                      {delta > 0 ? "▲" : delta < 0 ? "▼" : "•"} {Math.abs(Math.round(delta * 10) / 10)} in 7 days
+                    </p>
+                  )}
+                </div>
+                {!today.byClass.some((c) => MOOD_FOR[c.cls] === k) && today.closed.some((c) => MOOD_FOR[c] === k) ? (
+                  // Your holdings in this market haven't traded today: nothing of yours moved.
+                  <span className="shrink-0 text-right text-[12px] font-semibold text-white/50">
+                    Closed
+                    <span className="label block text-[8.5px] font-normal text-white/35">today</span>
+                  </span>
+                ) : (
+                  <span className={`num shrink-0 text-right text-[12.5px] font-semibold ${yours < 0 ? "text-down" : yours > 0 ? "text-up" : "text-white/60"}`}>
+                    {signed(yours, currency)}
+                    <span className="label block text-[8.5px] font-normal text-white/35">yours today</span>
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       {missingHistory.length > 0 && (
@@ -396,6 +451,15 @@ export function NetWorthChart({
         </p>
       )}
     </section>
+  );
+}
+
+function Period({ label, value, tone }: { label: string; value: string; tone?: number }) {
+  return (
+    <div className="min-w-0">
+      <dt className="label truncate text-[9.5px] text-white/40">{label}</dt>
+      <dd className={`num text-[13.5px] font-semibold ${tone === undefined || Math.abs(tone) < 1e-9 ? "text-white/85" : tone > 0 ? "text-up" : "text-down"}`}>{value}</dd>
+    </div>
   );
 }
 

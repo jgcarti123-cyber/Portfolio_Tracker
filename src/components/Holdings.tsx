@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { sortPositions, type Sort, type SortKey } from "@/lib/filters";
 import { money, pct, price, qty } from "@/lib/format";
-import { convert, type Position } from "@/lib/portfolio";
+import { convert, dayPct as dayPctOf, type Position } from "@/lib/portfolio";
 import { CLASS_META, type Account, type Candle, type Currency } from "@/lib/types";
 import { AssetBadge } from "./AssetBadge";
 import { Button, Delta, Disclosure, Icon } from "./ui";
@@ -155,7 +155,7 @@ export function Holdings({
               const held = Object.entries(p.byAccount)
                 .filter(([, q]) => q > 0)
                 .map(([id]) => accountName(id));
-              const dayPct = p.price && p.prevClose ? ((p.price - p.prevClose) / p.prevClose) * 100 : null;
+              const dayPct = dayPctOf(p);
               return (
                 <tr
                   key={p.asset.id}
@@ -186,9 +186,11 @@ export function Holdings({
                         ? "entered by you"
                         : p.priceSource === "last-trade"
                           ? "last trade price"
-                          : dayPct !== null
-                            ? `${pct(dayPct)} today`
-                            : ""}
+                          : p.closedToday
+                            ? "market closed today"
+                            : dayPct !== null
+                              ? `${pct(dayPct)} today`
+                              : ""}
                     </p>
                   </td>
                   <td className="num hidden px-2 text-right text-ink-2 group-hover:bg-sunken md:table-cell">

@@ -2,22 +2,29 @@
 
 import { useMemo, useState } from "react";
 import { compact, money, pct } from "@/lib/format";
-import { convert, type Position } from "@/lib/portfolio";
-import { CLASS_META, CLASS_ORDER, type Currency } from "@/lib/types";
+import { convert, dayPct, type Position } from "@/lib/portfolio";
+import { CLASS_META, CLASS_ORDER, type AssetClass, type Currency } from "@/lib/types";
 import { shortName } from "@/lib/insights";
+import { AssetBadge } from "./AssetBadge";
 import { useSize } from "./insights/kit";
+import { Inspector, ItemRow, LensGrid, PanelButton, PanelHead, Pill, Pills, Section, Stat, Stats } from "./lens-kit";
+import { BigMoney } from "./NetWorthChart";
 import { Card, CardHead } from "./ui";
 
 interface Bubble {
   id: string;
   label: string;
   name: string;
+  cls: AssetClass;
   color: string;
   value: number;
   /** Total return since you bought, %. */
   ret: number;
-  /** Today's price move, % (null when there's no daily price). */
+  /** Today's price move, % (null when there's no daily price or its market hasn't traded today). */
   day: number | null;
+  /** Its market hasn't traded today. */
+  closed: boolean;
+  pos: Position;
 }
 
 const bubbleIcon = (
@@ -29,12 +36,31 @@ const bubbleIcon = (
 );
 
 /**
+ * Return axis: 0% in the middle, equal room either side, small returns stretched and big
+ * ones squeezed (a signed log), so a few outliers don't crush everything else into a clump.
+ */
+const sx = (v: number) => Math.sign(v) * Math.log10(1 + Math.abs(v));
+const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+const fmtPct = (t: number) => (t === 0 ? "0%" : `${t > 0 ? "+" : "−"}${Math.abs(t) < 1 ? Math.abs(t).toFixed(1) : Math.abs(t).toFixed(0)}%`);
+
+function quadrant(b: Bubble) {
+  const gain = b.ret >= 0 ? "In profit" : "At a loss";
+  if (b.closed) return `${gain} · market closed today`;
+  if (b.day === null) return `${gain} · no daily price`;
+  return `${gain} and ${b.day >= 0 ? "up" : "down"} today`;
+}
+
+/**
  * Everything you hold on one map: across = total return, up = today's move, size = what it's
  * worth, colour = asset type. Winners sit top-right, laggards bottom-left. Click to open one.
  */
-export function HoldingsMap({ positions, currency, usdInr, onOpen }: { positions: Position[]; currency: Currency; usdInr: number; onOpen: (id: string) => void }) {
+export function HoldingsMap({ positions, currency, usdInr, onOpen, bare = false }: { positions: Position[]; currency: Currency; usdInr: number; onOpen: (id: string) => void; bare?: boolean }) {
   const [ref, box] = useSize<HTMLDivElement>();
+  // hover: a bubble under the pointer (the panel reads it out). peek: a row in the panel
+  // under the pointer (only highlighted on the map, so the panel doesn't swap under you).
   const [hover, setHover] = useState<string | null>(null);
+  const [peek, setPeek] = useState<string | null>(null);
+  const [focus, setFocus] = useState<AssetClass | null>(null);
   const bubbles = useMemo<Bubble[]>(
     () =>
       positions
@@ -43,10 +69,13 @@ export function HoldingsMap({ positions, currency, usdInr, onOpen }: { positions
           id: p.asset.id,
           label: shortName(p.asset),
           name: p.asset.name,
+          cls: p.asset.cls,
           color: CLASS_META[p.asset.cls].color,
           value: convert(p.value ?? p.cost, p.asset.currency, currency, usdInr),
           ret: p.cost > 0 && p.gain !== null ? (p.gain / p.cost) * 100 : 0,
-          day: p.price !== null && p.prevClose ? (p.price / p.prevClose - 1) * 100 : null,
+          day: dayPct(p),
+          closed: p.closedToday,
+          pos: p,
         }))
         .sort((a, b) => b.value - a.value),
     [positions, currency, usdInr],
@@ -54,165 +83,260 @@ export function HoldingsMap({ positions, currency, usdInr, onOpen }: { positions
   if (!bubbles.length) return null;
 
   const W = box.w;
-  const H = Math.max(220, box.h);
-  const M = { l: 40, r: 10, t: 10, b: 26 };
+  const H = Math.max(280, box.h);
+  const M = { l: 44, r: 2, t: 1, b: 26 };
   const plotW = Math.max(10, W - M.l - M.r);
   const plotH = H - M.t - M.b;
-  const rets = bubbles.map((b) => b.ret);
-  const lo0 = Math.min(0, ...rets);
-  const hi0 = Math.max(0, ...rets);
-  const padX = Math.max(2, (hi0 - lo0) * 0.12);
-  const xLo = lo0 - padX;
-  const xHi = hi0 + padX;
-  const yM = Math.max(0.5, ...bubbles.map((b) => Math.abs(b.day ?? 0))) * 1.3;
-  const x = (v: number) => M.l + ((v - xLo) / (xHi - xLo)) * plotW;
-  const y = (v: number) => M.t + ((yM - v) / (2 * yM)) * plotH;
   const maxV = bubbles[0].value;
-  const rMax = Math.max(14, Math.min(32, plotW / 15));
+  const rMax = Math.max(14, Math.min(28, plotW / 18));
+  // Keep the largest bubble inside the frame at the extremes, symmetric on every side.
+  const pad = rMax + 6;
+  const maxRet = Math.max(2, ...bubbles.map((b) => Math.abs(b.ret))) * 1.1;
+  const D = sx(maxRet);
+  const x = (v: number) => M.l + pad + ((sx(v) / D + 1) / 2) * (plotW - 2 * pad);
+  const yM = Math.max(0.5, ...bubbles.map((b) => Math.abs(b.day ?? 0))) * 1.1;
+  const y = (v: number) => M.t + pad + ((yM - v) / (2 * yM)) * (plotH - 2 * pad);
   const r = (v: number) => Math.max(5, rMax * Math.sqrt(v / maxV));
-  const xTicks = niceTicks(xLo, xHi, 5);
+
+  // Ticks outward from 0, mirrored, keeping only those with room between them.
+  const xTicks = [0];
+  let lastPx = 0;
+  for (const s of STEPS) {
+    if (s > maxRet) break;
+    const px = x(s) - x(0);
+    if (px - lastPx < 46) continue;
+    xTicks.push(s, -s);
+    lastPx = px;
+  }
   const yTicks = niceTicks(-yM, yM, 4);
 
-  const up = bubbles.filter((b) => (b.day ?? 0) > 0).length;
-  const priced = bubbles.filter((b) => b.day !== null).length;
-  const winners = bubbles.filter((b) => b.ret > 0).length;
-  const big = bubbles[0];
+  const inView = (b: Bubble) => !focus || b.cls === focus;
+  const shown = bubbles.filter(inView);
+  const priced = shown.filter((b) => b.day !== null);
+  const up = priced.filter((b) => (b.day ?? 0) > 0).length;
+  const winners = shown.filter((b) => b.ret > 0).length;
+  const shownValue = shown.reduce((s, b) => s + b.value, 0);
+  const total = bubbles.reduce((s, b) => s + b.value, 0);
+  const byRet = [...shown].sort((a, b) => b.ret - a.ret);
+  const n = Math.min(3, Math.floor(byRet.length / 2) || 1);
+  const best = byRet.slice(0, n);
+  const worst = byRet.length > 1 ? byRet.slice(-n).reverse() : [];
+
   const h = bubbles.find((b) => b.id === hover) ?? null;
-  const labels = W > 0 ? placeLabels(bubbles, x, y, r, { l: 0, r: W }) : new Map<string, { x: number; y: number; anchor: "start" | "end" | "middle"; inside: boolean }>();
-  const classes = CLASS_ORDER.filter((c) => positions.some((p) => p.qty > 0 && p.asset.cls === c));
+  const lit = hover ?? peek;
+  const labels = W > 0 ? placeLabels(shown, x, y, r, { l: M.l, r: M.l + plotW }) : new Map<string, LabelSpot>();
+  const classes = CLASS_ORDER.filter((c) => bubbles.some((b) => b.cls === c));
+  const x0 = x(0);
+  const y0 = y(0);
 
   return (
-    <Card className="flex h-full flex-col p-5">
-      <CardHead icon={bubbleIcon} title="Your holdings" color="var(--cat-2)">
-        <div className="flex items-center gap-1.5 text-[11.5px] font-semibold">
-          {priced > 0 && (
-            <span className="rounded-full bg-sunken px-2 py-0.5 text-ink-2 ring-1 ring-line">
-              <span className={up > 0 ? "text-up" : "text-ink"}>{up}</span>/{priced} up today
-            </span>
-          )}
-          <span className="rounded-full bg-sunken px-2 py-0.5 text-ink-2 ring-1 ring-line">
-            <span className={winners > 0 ? "text-up" : "text-ink"}>{winners}</span>/{bubbles.length} in profit
-          </span>
-        </div>
-      </CardHead>
-      <p className="num mt-3 text-[12.5px] text-ink-3 [&_b]:font-semibold [&_b]:text-ink-2">
-        Biggest: <b>{big.label}</b> {compact(big.value, currency)} · <b className={big.ret >= 0 ? "!text-up" : "!text-down"}>{pct(big.ret)}</b> overall
-        {big.day !== null && (
-          <>
-            {" "}
-            · <b className={big.day >= 0 ? "!text-up" : "!text-down"}>{pct(big.day)}</b> today
-          </>
-        )}
-      </p>
+    <Card className="flex h-full flex-col p-5" bare={bare}>
+      {!bare && <CardHead icon={bubbleIcon} title="Your holdings" color="var(--cat-2)" />}
 
-      <div ref={ref} className="relative mt-2 min-h-[220px] flex-1" onPointerLeave={() => setHover(null)}>
-        {W > 0 && (
-          <svg width={W} height={H} className="absolute inset-0 block overflow-visible">
-            {/* Quadrants: in profit and up today, at a loss and down today */}
-            <rect x={x(0)} y={M.t} width={Math.max(0, M.l + plotW - x(0))} height={Math.max(0, y(0) - M.t)} fill="var(--up)" opacity={0.05} />
-            <rect x={M.l} y={y(0)} width={Math.max(0, x(0) - M.l)} height={Math.max(0, M.t + plotH - y(0))} fill="var(--down)" opacity={0.05} />
-            {yTicks.map((t) => (
-              <g key={`y${t}`}>
-                <line x1={M.l} x2={M.l + plotW} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray={Math.abs(t) < 1e-9 ? undefined : "2 5"} strokeWidth={Math.abs(t) < 1e-9 ? 1.3 : 1} />
-                <text x={M.l - 8} y={y(t) + 4} textAnchor="end" className="num fill-ink-3 text-[10.5px]">
-                  {Math.abs(t) < 1e-9 ? "0%" : `${t > 0 ? "+" : "−"}${Math.abs(t).toFixed(Math.abs(t) < 1 ? 1 : 0)}%`}
-                </text>
-              </g>
-            ))}
-            {xTicks.map((t) => (
-              <g key={`x${t}`}>
-                {Math.abs(t) < 1e-9 && <line x1={x(0)} x2={x(0)} y1={M.t} y2={M.t + plotH} stroke="var(--line)" strokeWidth={1.3} />}
-                <text x={x(t)} y={H - 10} textAnchor="middle" className="num fill-ink-3 text-[10.5px]">
-                  {Math.abs(t) < 1e-9 ? "0%" : `${t > 0 ? "+" : "−"}${Math.abs(t).toFixed(0)}%`}
-                </text>
-              </g>
-            ))}
-            {bubbles.map((b, i) => {
-              const dim = hover && hover !== b.id;
-              const cy = y(b.day ?? 0);
-              return (
-                <g
-                  key={b.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${b.name}: ${money(b.value, currency, { decimals: 0 })}, ${pct(b.ret)} overall${b.day !== null ? `, ${pct(b.day)} today` : ""}`}
-                  onPointerEnter={() => setHover(b.id)}
-                  onFocus={() => setHover(b.id)}
-                  onBlur={() => setHover(null)}
-                  onClick={() => onOpen(b.id)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(b.id))}
-                  className="cursor-pointer outline-none"
-                  opacity={dim ? 0.3 : 1}
-                  style={{ transition: "opacity .2s" }}
-                >
-                  <circle
-                    cx={x(b.ret)}
-                    cy={cy}
-                    r={r(b.value)}
-                    fill={b.color}
-                    fillOpacity={b.day === null ? 0.25 : 0.78}
-                    stroke={hover === b.id ? "var(--ink)" : "var(--surface)"}
-                    strokeWidth={hover === b.id ? 2 : 1.5}
-                    strokeDasharray={b.day === null ? "3 2" : undefined}
-                    className="pop-in"
-                    style={{ animationDelay: `${i * 30}ms` }}
-                  />
-                </g>
-              );
-            })}
-            {bubbles.map((b) => {
-              const l = labels.get(b.id);
-              if (!l) return null;
-              return (
-                <text
-                  key={`t${b.id}`}
-                  x={l.x}
-                  y={l.y}
-                  textAnchor={l.anchor}
-                  className={`pointer-events-none text-[11px] font-semibold ${l.inside ? "fill-white" : "fill-ink-2"}`}
-                  opacity={hover && hover !== b.id ? 0.3 : 1}
-                  stroke={l.inside ? undefined : "var(--surface)"}
-                  strokeWidth={l.inside ? undefined : 3}
-                  paintOrder="stroke"
-                >
-                  {b.label.length > 14 ? `${b.label.slice(0, 13)}…` : b.label}
-                </text>
-              );
-            })}
-          </svg>
-        )}
-        {h && W > 0 && (
-          <div
-            className="pointer-events-none absolute z-20 w-[220px] rounded-xl px-3 py-2 text-[12px] text-white shadow-pop"
-            style={{
-              background: "var(--tip)",
-              left: Math.max(0, Math.min(x(h.ret) + (x(h.ret) > W / 2 ? -232 : r(h.value) + 10), W - 220)),
-              top: Math.max(0, Math.min(y(h.day ?? 0) - 30, H - 96)),
-            }}
-          >
-            <p className="text-[10.5px] font-medium text-white/60">{h.name}</p>
-            <p className="num text-[14px] font-bold">{money(h.value, currency, { decimals: 0 })}</p>
-            <p className={`num text-[11.5px] font-semibold ${h.ret >= 0 ? "text-[#5fdc9a]" : "text-[#ff8a92]"}`}>{pct(h.ret)} since you bought</p>
-            <p className="num text-[11.5px] text-white/75">{h.day === null ? "No daily price" : `${pct(h.day)} today`}</p>
-          </div>
-        )}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-[11px]">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      <div className={bare ? "" : "mt-4"}>
+        <Pills label="Asset type">
+          <Pill on={!focus} onClick={() => setFocus(null)} label="All" figure={bubbles.length} />
           {classes.map((c) => (
-            <span key={c} className="flex items-center gap-1 text-ink-3">
-              <span className="size-2 rounded-full" style={{ background: CLASS_META[c].color }} />
-              {CLASS_META[c].label}
-            </span>
+            <Pill key={c} on={focus === c} onClick={() => setFocus((f) => (f === c ? null : c))} label={CLASS_META[c].label} dot={CLASS_META[c].color} figure={bubbles.filter((b) => b.cls === c).length} />
           ))}
-        </div>
-        <span className="text-ink-3">
-          across: return · up: today · size: value
-        </span>
+        </Pills>
       </div>
+
+      <LensGrid>
+        <div className="flex min-w-0 flex-col">
+          <div ref={ref} className="relative h-[340px] min-w-0 xl:h-[472px]" onPointerLeave={() => setHover(null)}>
+            {W > 0 && (
+              <svg width={W} height={H} className="absolute inset-0 block overflow-visible" role="img" aria-label="Holdings by return since you bought and today's move">
+                <defs>
+                  <radialGradient id="map-shine" cx="35%" cy="30%" r="70%">
+                    <stop offset="0%" stopColor="white" stopOpacity={0.35} />
+                    <stop offset="60%" stopColor="white" stopOpacity={0} />
+                  </radialGradient>
+                </defs>
+                {/* Four equal quadrants; the two that agree (profit & up, loss & down) are tinted */}
+                <rect x={x0} y={M.t} width={M.l + plotW - x0} height={y0 - M.t} fill="var(--up)" opacity={0.05} />
+                <rect x={M.l} y={y0} width={x0 - M.l} height={M.t + plotH - y0} fill="var(--down)" opacity={0.05} />
+                <rect x={M.l} y={M.t} width={plotW} height={plotH} fill="none" stroke="var(--line)" rx={10} />
+                {(
+                  [
+                    ["In profit · up today", M.l + plotW - 10, M.t + 18, "end"],
+                    ["At a loss · up today", M.l + 10, M.t + 18, "start"],
+                    ["At a loss · down today", M.l + 10, M.t + plotH - 10, "start"],
+                    ["In profit · down today", M.l + plotW - 10, M.t + plotH - 10, "end"],
+                  ] as const
+                ).map(([t, tx, ty, a]) => {
+                  // Step aside for any holding sitting in that corner.
+                  const w = t.length * 7;
+                  const l = a === "end" ? tx - w : tx;
+                  const covered = shown.some((b) => {
+                    const cx = x(b.ret);
+                    const cy = y(b.day ?? 0);
+                    const rr = r(b.value) + 3;
+                    return cx + rr > l && cx - rr < l + w && cy + rr > ty - 10 && cy - rr < ty + 2;
+                  });
+                  return covered ? null : (
+                    <text key={t} x={tx} y={ty} textAnchor={a} className="label pointer-events-none fill-ink-3 text-[8.5px]" opacity={0.55}>
+                      {t}
+                    </text>
+                  );
+                })}
+                {yTicks.map((t) => (
+                  <g key={`y${t}`}>
+                    {t !== 0 && <line x1={M.l} x2={M.l + plotW} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeDasharray="2 5" />}
+                    <text x={M.l - 8} y={y(t) + 4} textAnchor="end" className="num fill-ink-3 text-[10.5px]">
+                      {fmtPct(t)}
+                    </text>
+                  </g>
+                ))}
+                {xTicks.map((t) => (
+                  <g key={`x${t}`}>
+                    {t !== 0 && <line x1={x(t)} x2={x(t)} y1={M.t} y2={M.t + plotH} stroke="var(--line)" strokeDasharray="2 5" />}
+                    <text x={x(t)} y={H - 8} textAnchor="middle" className="num fill-ink-3 text-[10.5px]">
+                      {fmtPct(t)}
+                    </text>
+                  </g>
+                ))}
+                {/* The zero cross */}
+                <line x1={M.l} x2={M.l + plotW} y1={y0} y2={y0} stroke="var(--ink-3)" strokeOpacity={0.45} />
+                <line x1={x0} x2={x0} y1={M.t} y2={M.t + plotH} stroke="var(--ink-3)" strokeOpacity={0.45} />
+
+                {bubbles.map((b, i) => {
+                  const on = lit === b.id;
+                  const dim = !inView(b) ? 0.1 : lit && !on ? 0.3 : 1;
+                  const cx = x(b.ret);
+                  const cy = y(b.day ?? 0);
+                  const rr = r(b.value);
+                  return (
+                    <g
+                      key={b.id}
+                      role="button"
+                      tabIndex={inView(b) ? 0 : -1}
+                      aria-label={`${b.name}: ${money(b.value, currency, { decimals: 0 })}, ${pct(b.ret)} overall${b.day !== null ? `, ${pct(b.day)} today` : ""}`}
+                      onPointerEnter={() => inView(b) && setHover(b.id)}
+                      onFocus={() => setHover(b.id)}
+                      onBlur={() => setHover(null)}
+                      onClick={() => inView(b) && onOpen(b.id)}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(b.id))}
+                      className={inView(b) ? "cursor-pointer outline-none" : "pointer-events-none"}
+                      opacity={dim}
+                      style={{ transition: "opacity .25s" }}
+                    >
+                      <g className="pop-in" style={{ animationDelay: `${i * 30}ms`, transformOrigin: `${cx}px ${cy}px` }}>
+                        {on && <circle cx={cx} cy={cy} r={rr + 5} fill="none" stroke="var(--ink)" strokeOpacity={0.7} strokeWidth={1.2} />}
+                        <circle cx={cx} cy={cy} r={rr} fill={b.color} fillOpacity={b.closed ? 0.5 : b.day === null ? 0.3 : 0.88} stroke="var(--surface)" strokeWidth={1.5} strokeDasharray={b.day === null && !b.closed ? "3 2" : undefined} />
+                        {b.day !== null && <circle cx={cx} cy={cy} r={rr} fill="url(#map-shine)" />}
+                      </g>
+                    </g>
+                  );
+                })}
+                {shown.map((b) => {
+                  const l = labels.get(b.id);
+                  if (!l) return null;
+                  return (
+                    <text
+                      key={`t${b.id}`}
+                      x={l.x}
+                      y={l.y}
+                      textAnchor={l.anchor}
+                      className={`pointer-events-none text-[11px] font-semibold ${l.inside ? "fill-white" : "fill-ink-2"}`}
+                      opacity={lit && lit !== b.id ? 0.3 : 1}
+                      stroke={l.inside ? undefined : "var(--surface)"}
+                      strokeWidth={l.inside ? undefined : 3}
+                      paintOrder="stroke"
+                    >
+                      {clip(b.label)}
+                    </text>
+                  );
+                })}
+              </svg>
+            )}
+          </div>
+          <p className="mt-2 flex items-center justify-between pl-[44px] pr-0.5text-[10.5px] text-ink-3">
+            <span>← At a loss</span>
+            <span className="label text-[9px]">Return since you bought · size = value</span>
+            <span>In profit →</span>
+          </p>
+        </div>
+
+        <Inspector>
+          {h ? (
+            <div key={h.id} className="item-in flex flex-1 flex-col">
+              <PanelHead label={CLASS_META[h.cls].label} dot={h.color}>
+                <PanelButton onClick={() => onOpen(h.id)}>Open</PanelButton>
+              </PanelHead>
+              <div className="mt-4 flex items-center gap-3">
+                <AssetBadge position={h.pos} size={36} />
+                <p className="min-w-0 truncate text-[14px] font-semibold text-white/90">{h.name}</p>
+              </div>
+              <p className="mt-2.5 text-[36px] text-white">
+                <BigMoney value={h.value} currency={currency} />
+              </p>
+              <p className={`num mt-2 text-[13px] font-semibold ${h.ret >= 0 ? "text-up" : "text-down"}`}>
+                {pct(h.ret)} <span className="label ml-1 text-[9.5px] text-white/45">since you bought</span>
+              </p>
+              <Stats>
+                <Stat label="Overall" value={pct(h.ret)} tone={h.ret} />
+                <Stat label="Today" value={h.day === null ? "–" : pct(h.day)} tone={h.day ?? 0} sub={h.closed ? "Market closed" : h.day === null ? "No daily price" : undefined} />
+                <Stat label="Share" value={`${((h.value / total) * 100).toFixed(1)}%`} />
+              </Stats>
+              <p className="mt-4 flex items-center gap-2 text-[12px] text-white/60">
+                <span className="size-[6px] rounded-full" style={{ background: h.ret >= 0 ? "var(--up)" : "var(--down)", boxShadow: `0 0 8px ${h.ret >= 0 ? "var(--up)" : "var(--down)"}` }} />
+                {quadrant(h)}
+              </p>
+            </div>
+          ) : (
+            <div key={focus ?? "all"} className="item-in flex min-h-0 flex-1 flex-col">
+              <PanelHead label={focus ? CLASS_META[focus].label : "All holdings"} dot={focus ? CLASS_META[focus].color : undefined} />
+              <p className="mt-2.5 text-[36px] text-white">
+                <BigMoney value={shownValue} currency={currency} />
+              </p>
+              <Stats>
+                <Stat label="Holdings" value={shown.length} />
+                <Stat label="Up today" value={priced.length ? `${up}/${priced.length}` : "–"} tone={priced.length ? (up > priced.length / 2 ? 1 : up < priced.length / 2 ? -1 : 0) : 0} />
+                <Stat label="In profit" value={`${winners}/${shown.length}`} tone={winners > shown.length / 2 ? 1 : winners < shown.length / 2 ? -1 : 0} />
+              </Stats>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <Section title="Best since you bought">
+                  <div className="-mx-2">
+                    {best.map((b) => (
+                      <MapRow key={b.id} b={b} currency={currency} active={peek === b.id} setHover={setPeek} onOpen={onOpen} />
+                    ))}
+                  </div>
+                </Section>
+                {worst.length > 0 && (
+                  <Section title="Worst since you bought">
+                    <div className="-mx-2">
+                      {worst.map((b) => (
+                        <MapRow key={b.id} b={b} currency={currency} active={peek === b.id} setHover={setPeek} onOpen={onOpen} />
+                      ))}
+                    </div>
+                  </Section>
+                )}
+              </div>
+            </div>
+          )}
+        </Inspector>
+      </LensGrid>
     </Card>
   );
 }
+
+function MapRow({ b, currency, active, setHover, onOpen }: { b: Bubble; currency: Currency; active: boolean; setHover: (id: string | null) => void; onOpen: (id: string) => void }) {
+  return (
+    <ItemRow
+      badge={<AssetBadge position={b.pos} size={22} />}
+      label={b.label}
+      sub={`${compact(b.value, currency)}${b.day !== null ? ` · ${pct(b.day)} today` : ""}`}
+      value={pct(b.ret)}
+      tone={b.ret}
+      active={active}
+      onHover={(on) => setHover(on ? b.id : null)}
+      onClick={() => onOpen(b.id)}
+    />
+  );
+}
+
+const clip = (s: string) => (s.length > 13 ? `${s.slice(0, 12)}…` : s);
 
 function niceTicks(lo: number, hi: number, count: number) {
   const raw = (hi - lo) / count;
@@ -224,30 +348,38 @@ function niceTicks(lo: number, hi: number, count: number) {
   return out;
 }
 
-/** Label inside big bubbles; beside smaller ones where there's room. Small, crowded ones rely on hover. */
+type LabelSpot = { x: number; y: number; anchor: "start" | "end" | "middle"; inside: boolean };
+
+/** Label inside big bubbles; beside smaller ones where there's room. Crowded ones rely on hover. */
 function placeLabels(bubbles: Bubble[], x: (v: number) => number, y: (v: number) => number, r: (v: number) => number, bounds: { l: number; r: number }) {
-  const out = new Map<string, { x: number; y: number; anchor: "start" | "end" | "middle"; inside: boolean }>();
-  const boxes: { l: number; r: number; t: number; b: number }[] = [];
-  const hit = (a: { l: number; r: number; t: number; b: number }) => boxes.some((o) => a.l < o.r && a.r > o.l && a.t < o.b && a.b > o.t);
+  const out = new Map<string, LabelSpot>();
+  const box = (l: number, r: number, t: number, b: number) => ({ l, r, t, b });
+  // Bubbles themselves are obstacles, so a label never sits on another holding.
+  const boxes = bubbles.map((b) => {
+    const cx = x(b.ret);
+    const cy = y(b.day ?? 0);
+    const rr = r(b.value);
+    return { id: b.id, ...box(cx - rr, cx + rr, cy - rr, cy + rr) };
+  });
+  const hit = (a: ReturnType<typeof box>, self: string) => boxes.some((o) => o.id !== self && a.l < o.r && a.r > o.l && a.t < o.b && a.b > o.t);
   for (const b of bubbles) {
     const cx = x(b.ret);
     const cy = y(b.day ?? 0);
     const rr = r(b.value);
-    const text = b.label.length > 14 ? 14 : b.label.length;
-    const w = text * 6.2;
+    const w = clip(b.label).length * 6.3;
     if (rr * 2 >= w + 8) {
-      boxes.push({ l: cx - w / 2, r: cx + w / 2, t: cy - 7, b: cy + 6 });
       out.set(b.id, { x: cx, y: cy + 4, anchor: "middle", inside: true });
       continue;
     }
     const options = [
-      { x: cx + rr + 5, y: cy + 4, anchor: "start" as const, box: { l: cx + rr + 4, r: cx + rr + 6 + w, t: cy - 7, b: cy + 6 } },
-      { x: cx - rr - 5, y: cy + 4, anchor: "end" as const, box: { l: cx - rr - 6 - w, r: cx - rr - 4, t: cy - 7, b: cy + 6 } },
-      { x: cx, y: cy - rr - 5, anchor: "middle" as const, box: { l: cx - w / 2, r: cx + w / 2, t: cy - rr - 16, b: cy - rr - 3 } },
+      { x: cx + rr + 5, y: cy + 4, anchor: "start" as const, box: box(cx + rr + 4, cx + rr + 6 + w, cy - 7, cy + 6) },
+      { x: cx - rr - 5, y: cy + 4, anchor: "end" as const, box: box(cx - rr - 6 - w, cx - rr - 4, cy - 7, cy + 6) },
+      { x: cx, y: cy - rr - 5, anchor: "middle" as const, box: box(cx - w / 2, cx + w / 2, cy - rr - 16, cy - rr - 3) },
+      { x: cx, y: cy + rr + 13, anchor: "middle" as const, box: box(cx - w / 2, cx + w / 2, cy + rr + 2, cy + rr + 15) },
     ];
-    const pick = options.find((o) => !hit(o.box) && o.box.l >= bounds.l && o.box.r <= bounds.r);
+    const pick = options.find((o) => !hit(o.box, b.id) && o.box.l >= bounds.l && o.box.r <= bounds.r);
     if (!pick) continue;
-    boxes.push(pick.box);
+    boxes.push({ id: `${b.id}:label`, ...pick.box });
     out.set(b.id, { x: pick.x, y: pick.y, anchor: pick.anchor, inside: false });
   }
   return out;

@@ -99,7 +99,11 @@ export function MoodStrip({ readings, missing, today, classes, currency }: { rea
             </div>
             <div className="mt-2 flex items-center justify-between border-t border-line pt-3 text-[12px]">
               <span className="text-ink-3">Your {MOOD_NAME[k] === "India" ? "Indian holdings" : MOOD_NAME[k] === "US" ? "US stocks" : "crypto"} today</span>
-              <span className={`num font-semibold ${move < 0 ? "text-down" : move > 0 ? "text-up" : "text-ink-2"}`}>{signed(move, currency)}</span>
+              {!today.byClass.some((c) => MOOD_FOR[c.cls] === k) && today.closed.some((c) => MOOD_FOR[c] === k) ? (
+                <span className="font-semibold text-ink-3">Market closed</span>
+              ) : (
+                <span className={`num font-semibold ${move < 0 ? "text-down" : move > 0 ? "text-up" : "text-ink-2"}`}>{signed(move, currency)}</span>
+              )}
             </div>
           </div>
         );
