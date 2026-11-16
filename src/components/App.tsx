@@ -31,6 +31,7 @@ import { ImportFlow } from "./ImportFlow";
 import { NetWorthChart } from "./NetWorthChart";
 import { DashboardLens } from "./DashboardLens";
 import { MoversWaterfall } from "./MoversWaterfall";
+import { CloudIcon, Dot, SyncPanel } from "./SyncPanel";
 import { Button, Card, Icon, Modal, Segmented } from "./ui";
 
 export function App() {
@@ -54,7 +55,8 @@ function Shell() {
 }
 
 function Portfolio() {
-  const { data, lock } = useStore();
+  const { data, lock, sync } = useStore();
+  const [syncOpen, setSyncOpen] = useState(false);
   const { theme, toggle } = useTheme();
   const [currency, setCurrency] = useState<Currency>("INR");
   const [adding, setAdding] = useState(false);
@@ -186,7 +188,7 @@ function Portfolio() {
                 {Icon.upload}
               </button>
             )}
-            <div role="toolbar" aria-label="Appearance and lock" className="glass flex items-center rounded-full p-[3px]">
+            <div role="toolbar" aria-label="Appearance, sync and lock" className="glass flex items-center rounded-full p-[3px]">
               <button
                 type="button"
                 onClick={toggle}
@@ -198,6 +200,21 @@ function Portfolio() {
                 <span key={theme} className="pop-in">
                   {theme === "dark" ? Icon.sun : Icon.moon}
                 </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSyncOpen(true)}
+                aria-label={sync.state === "off" ? "Sync across devices" : `Sync: ${sync.state === "idle" ? "in sync" : sync.state}`}
+                data-tip={sync.state === "off" ? "Sync devices" : sync.state === "idle" ? "In sync" : sync.state === "syncing" ? "Syncing…" : sync.state === "offline" ? "Offline" : "Sync needs attention"}
+                className="press glass-tool streak-host"
+              >
+                <span className="streak-clip" aria-hidden />
+                {CloudIcon}
+                {sync.state !== "off" && (
+                  <span className="absolute right-[7px] top-[6px]">
+                    <Dot state={sync.state} />
+                  </span>
+                )}
               </button>
               <button type="button" onClick={lock} aria-label="Lock" data-tip="Lock Folio" className="press glass-tool streak-host">
                 <span className="streak-clip" aria-hidden />
@@ -343,6 +360,7 @@ function Portfolio() {
         />
       )}
       {adding && <AddHolding onClose={() => setAdding(false)} onSaved={notify} />}
+      {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} />}
       {importing && <ImportFlow onClose={() => setImporting(false)} onSaved={notify} />}
       {cashOpen && (
         <Modal title="Cash" header={<span />} onClose={() => setCashOpen(false)} wide>

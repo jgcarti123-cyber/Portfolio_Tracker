@@ -180,3 +180,42 @@ function readTab(): { id: string; raw: string } | null {
     return null;
   }
 }
+
+/*
+ * This device's sync settings (Secret Key, the derived encryption key, and the last copy both
+ * sides agreed on), sealed with the vault key so they open whenever the vault does, including
+ * after a refresh. Kept apart from the vault document so they never travel with it.
+ */
+const SYNC = "sync";
+
+export interface SyncState {
+  secretKey: string;
+  /** The sync encryption key, raw base64 (it needs the passphrase to derive, so it's kept). */
+  keyRaw: string;
+  /** Server version of `base`. */
+  version: number;
+  /** The last copy this device and the server agreed on, for three-way merges. */
+  base: VaultData;
+  lastSync: number;
+}
+
+export async function loadSyncState(open: OpenVault): Promise<SyncState | null> {
+  try {
+    const sealed = await idbGet<{ iv: Uint8Array<ArrayBuffer>; ct: ArrayBuffer }>(SYNC);
+    if (!sealed) return null;
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: sealed.iv }, open.key, sealed.ct);
+    return JSON.parse(new TextDecoder().decode(plain)) as SyncState;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSyncState(open: OpenVault, state: SyncState): Promise<void> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, open.key, new TextEncoder().encode(JSON.stringify(state)));
+  await idbSet(SYNC, { iv, ct });
+}
+
+export async function clearSyncState(): Promise<void> {
+  await idbDel(SYNC);
+}

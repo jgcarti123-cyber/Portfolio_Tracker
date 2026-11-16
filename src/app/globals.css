@@ -1140,3 +1140,11 @@ p {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ink) 18%, transparent) transparent;
 }
+
+/* Installed on a phone (full screen): keep the header clear of the notch and the toast above the home bar. */
+.masthead {
+  padding-top: env(safe-area-inset-top);
+}
+.toast {
+  margin-bottom: env(safe-area-inset-bottom);
+}

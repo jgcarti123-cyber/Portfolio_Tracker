@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
+import { normalizeSecretKey } from "@/lib/syncCrypto";
 
 /** Wordmark: extended, tracked capitals with a small indicator light, like a panel legend. */
 export function Logo({ tone = "ink" }: { tone?: "ink" | "white" }) {
@@ -19,18 +20,65 @@ const SEGMENTS = 32;
 
 type MeterState = "idle" | "reading" | "error";
 
+/** A Secret Key handed over in the link from another device's QR code (#kit=…), read once. */
+let urlKit: string | null | undefined;
+function takeKitFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  if (urlKit !== undefined) return urlKit;
+  const m = /[#&]kit=([^&]+)/.exec(location.hash);
+  urlKit = m ? normalizeSecretKey(decodeURIComponent(m[1])) : null;
+  return urlKit;
+}
+
 export function Gate() {
-  const { status, create, unlock } = useStore();
-  const isNew = status === "new";
-  const [step, setStep] = useState<"pass" | "confirm">("pass");
+  const { status, create, unlock, restore } = useStore();
+  const [kit] = useState(takeKitFromUrl);
+  const [mode, setMode] = useState<"vault" | "restore">(kit ? "restore" : "vault");
+  const [secret, setSecret] = useState(kit ?? "");
+  const isNew = status === "new" && mode === "vault";
+  const restoring = mode === "restore";
+  const [step, setStep] = useState<"key" | "pass" | "confirm">("pass");
   const [pass, setPass] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [state, setState] = useState<MeterState>("idle");
   const input = useRef<HTMLInputElement>(null);
+  const keyInput = useRef<HTMLInputElement>(null);
 
-  const value = step === "pass" ? pass : confirm;
-  const setValue = step === "pass" ? setPass : setConfirm;
+  const value = step === "confirm" ? confirm : pass;
+  const setValue = step === "confirm" ? setConfirm : setPass;
+
+  // Take the key out of the address bar and history straight away.
+  useEffect(() => {
+    if (/[#&]kit=/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
+  }, []);
+
+  useEffect(() => {
+    if (step === "key") keyInput.current?.focus();
+    else input.current?.focus();
+  }, [step, mode]);
+
+  function startRestore() {
+    setMode("restore");
+    setStep(secret ? "pass" : "key");
+    setPass("");
+    setError("");
+  }
+  function cancelRestore() {
+    setMode("vault");
+    setStep("pass");
+    setPass("");
+    setError("");
+  }
+
+  async function submitKey(e: React.FormEvent) {
+    e.preventDefault();
+    const k = normalizeSecretKey(secret);
+    if (!k) return setError("That doesn't look like a complete Secret Key. It starts with F1- and has 28 letters and numbers.");
+    setSecret(k);
+    setError("");
+    setStep("pass");
+  }
 
   function fail(message: string) {
     setError(message);
@@ -43,6 +91,17 @@ export function Gate() {
     e.preventDefault();
     if (state === "reading" || !value) return;
     setError("");
+    if (restoring) {
+      setState("reading");
+      try {
+        await restore(secret, pass);
+        setState("idle");
+      } catch (err) {
+        setState("idle");
+        fail(err instanceof Error ? err.message : "Couldn't restore. Try again.");
+      }
+      return;
+    }
     if (isNew && step === "pass") {
       if (pass.length < 8) return fail("Use at least 8 characters.");
       setStep("confirm");
@@ -59,11 +118,11 @@ export function Gate() {
     setState("idle");
   }
 
-  const headline = isNew ? ["Everything you own,", "on one page."] : ["Everything you own.", "Nobody else's business."];
-  const prompt = isNew ? (step === "pass" ? "Choose a passphrase" : "Type it again") : "Passphrase";
+  const headline = restoring ? ["Welcome back.", "Your portfolio, on this device."] : isNew ? ["Everything you own,", "on one page."] : ["Everything you own.", "Nobody else's business."];
+  const prompt = restoring ? "Your passphrase" : isNew ? (step === "pass" ? "Choose a passphrase" : "Type it again") : "Passphrase";
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-black text-white" onPointerDown={() => setTimeout(() => input.current?.focus(), 0)}>
+    <main className="fixed inset-0 overflow-hidden bg-black text-white" onPointerDown={(e) => step !== "key" && !(e.target as HTMLElement).closest("button") && setTimeout(() => input.current?.focus(), 0)}>
       {/* One panorama of the four pictures, gliding slowly */}
       {/* eslint-disable-next-line @next/next/no-img-element -- a plain background picture; next/image adds nothing here */}
       <img src="/unlock/panorama.webp" alt="" className="pano select-none" fetchPriority="high" draggable={false} aria-hidden />
@@ -71,7 +130,7 @@ export function Gate() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/50 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-t from-black/85 via-black/45 to-transparent sm:h-[42%]" />
 
-      <div className="relative z-10 flex h-full flex-col px-6 pb-6 pt-6 sm:px-12 sm:pb-10 sm:pt-9">
+      <div className="relative z-10 flex h-full flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-12 sm:pb-10 sm:pt-9">
         {/* Top: wordmark and model code, like the corner of a print ad */}
         <header className="rise-in flex items-start justify-between" style={{ animationDelay: "0.15s" }}>
           <Logo tone="white" />
@@ -97,7 +156,43 @@ export function Gate() {
             </span>
           </h1>
 
-          <form onSubmit={submit} className="rise-in" style={{ animationDelay: "0.75s" }}>
+          {step === "key" ? (
+            <form onSubmit={submitKey} className="rise-in" style={{ animationDelay: "0.1s" }}>
+              <div className="flex items-baseline justify-between">
+                <label htmlFor="secret" className="label text-white/70">
+                  Secret Key from your Recovery Kit
+                </label>
+                <span className="label text-white/40">F1-…</span>
+              </div>
+              <div className="mt-4 flex items-center gap-5">
+                <input
+                  ref={keyInput}
+                  id="secret"
+                  value={secret}
+                  onChange={(e) => (setSecret(e.target.value.toUpperCase()), setError(""))}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  placeholder="F1-XXXXX-XXXXX-XXXXX-XXXXX-XXXXXX"
+                  className="num h-11 min-w-0 flex-1 border-b border-white/30 bg-transparent text-[16px] font-semibold tracking-[0.06em] text-white outline-none placeholder:text-white/25 focus:border-white/80 sm:text-[18px]"
+                />
+                <button
+                  type="submit"
+                  disabled={!secret}
+                  className="label press flex h-11 shrink-0 items-center gap-2 rounded-full px-5 text-white ring-1 ring-white/35 transition-[background-color,opacity] hover:bg-white hover:text-black disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-white"
+                >
+                  Next <span aria-hidden>↵</span>
+                </button>
+              </div>
+              <p role="alert" className={`mt-4 min-h-[18px] text-[13px] font-medium ${error ? "text-[#ffb35c]" : "text-white/40"}`}>
+                {error || (status === "locked" ? "Restoring replaces the vault on this device with your synced one." : "Or scan the QR code from a device that's already linked.")}
+              </p>
+              <button type="button" onClick={cancelRestore} className="label mt-2 text-white/55 hover:text-white">
+                ← Back
+              </button>
+            </form>
+          ) : (
+          <form onSubmit={submit} className="rise-in" style={{ animationDelay: restoring ? "0.1s" : "0.75s" }}>
             <div className="flex items-baseline justify-between">
               <label htmlFor="pass" className="label text-white/70">
                 {prompt}
@@ -118,6 +213,7 @@ export function Gate() {
                   type="password"
                   autoFocus
                   autoComplete={isNew ? "new-password" : "current-password"}
+                  aria-label={prompt}
                   value={value}
                   onChange={(e) => {
                     setValue(e.target.value);
@@ -134,27 +230,41 @@ export function Gate() {
                 disabled={!value || state === "reading"}
                 className="label press flex h-11 shrink-0 items-center gap-2 rounded-full px-5 text-white ring-1 ring-white/35 transition-[background-color,opacity,box-shadow] hover:bg-white hover:text-black disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-white"
               >
-                {isNew && step === "pass" ? "Next" : isNew ? "Create" : "Enter"}
+                {restoring ? "Restore" : isNew && step === "pass" ? "Next" : isNew ? "Create" : "Enter"}
                 <span aria-hidden>↵</span>
               </button>
             </div>
 
             <p id="pass-error" role="alert" className={`mt-4 min-h-[18px] text-[13px] font-medium ${error ? "text-[#ffb35c]" : "text-white/40"}`}>
               {error ||
-                (isNew
-                  ? step === "pass"
-                    ? "There's no reset. If you forget it, the data can't be recovered — not by you, not by us."
-                    : "Once more, so a typo doesn't lock you out."
-                  : "")}
+                (restoring
+                  ? `Restoring with key ${secret.slice(0, 8)}…${status === "locked" ? " This replaces the vault on this device." : ""}`
+                  : isNew
+                    ? step === "pass"
+                      ? "There's no reset. If you forget it, the data can't be recovered — not by you, not by us."
+                      : "Once more, so a typo doesn't lock you out."
+                    : "")}
             </p>
+            {restoring ? (
+              <button type="button" onClick={cancelRestore} className="label mt-2 text-white/55 hover:text-white">
+                ← Back
+              </button>
+            ) : (
+              step !== "confirm" && (
+                <button type="button" onClick={startRestore} className="label mt-2 text-white/55 underline-offset-4 hover:text-white hover:underline">
+                  {isNew ? "Already use Folio? Restore with Recovery Kit" : "Restore with Recovery Kit"}
+                </button>
+              )
+            )}
           </form>
+          )}
         </div>
 
         {/* Bottom: the small print */}
         <footer className="rise-in mt-8 flex items-end justify-between gap-6 border-t border-white/10 pt-5 sm:mt-10" style={{ animationDelay: "0.95s" }}>
-          <span className="label hidden text-white/55 sm:inline">No sign-up · No servers · No tracking</span>
+          <span className="label hidden text-white/55 sm:inline">No sign-up · No tracking · Optional end-to-end sync</span>
           <span className="label text-right text-white/45">
-            AES-256 · <span className="hidden sm:inline">Stored only </span>on this device
+            AES-256 · <span className="hidden sm:inline">Encrypted </span>on this device
           </span>
         </footer>
       </div>

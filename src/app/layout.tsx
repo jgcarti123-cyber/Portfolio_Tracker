@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Archivo, Inter_Tight } from "next/font/google";
 import Script from "next/script";
 import { themeScript } from "@/lib/theme-script";
@@ -13,6 +13,16 @@ export const metadata: Metadata = {
   title: "Folio — net worth tracker",
   description:
     "Track Indian stocks, US stocks, mutual funds and crypto across every broker in one place. Your data stays encrypted in your browser.",
+  applicationName: "Folio",
+  appleWebApp: { capable: true, title: "Folio", statusBarStyle: "black-translucent" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  formatDetection: { telephone: false },
+};
+
+/** Fill the whole screen on phones (the masthead pads itself below the notch). */
+export const viewport: Viewport = {
+  themeColor: "#0a0b0d",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -12,7 +12,21 @@ import {
 } from "react";
 import { cashBalances } from "./cash";
 import type { Account, Asset, CashEntry, ChatMessage, Txn, VaultData } from "./types";
-import { createVault, forgetSession, rememberSession, resumeSession, saveVault, unlockVault, vaultExists, type OpenVault } from "./vault";
+import { deriveSyncIds, deriveSyncKeys, exportKey, newSecretKey, normalizeSecretKey, seal, unseal } from "./syncCrypto";
+import { SyncEngine, SyncError, syncRequest, type SyncStatus } from "./syncEngine";
+import {
+  clearSyncState,
+  createVault,
+  forgetSession,
+  loadSyncState,
+  rememberSession,
+  resumeSession,
+  saveSyncState,
+  saveVault,
+  unlockVault,
+  vaultExists,
+  type OpenVault,
+} from "./vault";
 
 type Status = "loading" | "new" | "locked" | "open";
 
@@ -48,6 +62,15 @@ interface Store {
   setChat: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
   /** Adds many holdings to one broker in a single save. Returns the account id. */
   applyImport: (accountName: string, rows: ImportRow[]) => string;
+  /** End-to-end encrypted sync between devices. */
+  sync: SyncStatus & { secretKey: string | null };
+  /** Turns sync on (checks the passphrase first). Returns the new Secret Key for the Recovery Kit. */
+  enableSync: (passphrase: string) => Promise<string>;
+  /** Turns sync off and deletes the server copy. This device keeps its data. */
+  disableSync: () => Promise<void>;
+  /** Brings a synced vault onto this device from a Secret Key and passphrase (replaces any vault here). */
+  restore: (secretKey: string, passphrase: string) => Promise<void>;
+  syncNow: () => void;
 }
 
 export interface ImportRow {
@@ -66,6 +89,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<VaultData>(EMPTY);
   const vault = useRef<OpenVault | null>(null);
   const dataRef = useRef(data);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: "off", lastSync: null });
+  const engineRef = useRef<SyncEngine | null>(null);
+  /** The sync engine, made on first use (only ever from effects and handlers). */
+  const getEngine = useCallback(
+    () =>
+      (engineRef.current ??= new SyncEngine({
+        getData: () => dataRef.current,
+        apply: (next) => {
+          dataRef.current = next;
+          setData(next);
+          if (vault.current) void saveVault(vault.current, next);
+        },
+        persist: async (state) => {
+          if (vault.current) await saveSyncState(vault.current, state);
+        },
+        onStatus: setSyncStatus,
+      })),
+    [],
+  );
+
+  /** Starts syncing if this device has it turned on. */
+  const startSync = useCallback(async (open: OpenVault) => {
+    const state = await loadSyncState(open);
+    if (state && vault.current === open) await getEngine().start(state);
+  }, [getEngine]);
 
   useEffect(() => {
     (async () => {
@@ -75,20 +123,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         vault.current = resumed.open;
         dataRef.current = resumed.data;
         setData(resumed.data);
-        return setStatus("open");
+        setStatus("open");
+        return void startSync(resumed.open);
       }
       setStatus((await vaultExists()) ? "locked" : "new");
     })().catch(() => setStatus("new"));
-  }, []);
+  }, [startSync]);
 
   /** Apply a change and write the re-encrypted vault to disk. */
   const commit = useCallback((next: VaultData) => {
     dataRef.current = next;
     setData(next);
     if (vault.current) void saveVault(vault.current, next);
+    engineRef.current?.changed();
   }, []);
 
   const create = useCallback(async (passphrase: string) => {
+    await clearSyncState();
     vault.current = await createVault(passphrase, EMPTY);
     void rememberSession(vault.current);
     dataRef.current = EMPTY;
@@ -104,13 +155,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dataRef.current = data;
       setData(data);
       setStatus("open");
+      void startSync(open);
       return true;
     } catch {
       return false;
     }
-  }, []);
+  }, [startSync]);
 
   const lock = useCallback(() => {
+    engineRef.current?.stop();
     void forgetSession();
     vault.current = null;
     dataRef.current = EMPTY;
@@ -240,6 +293,72 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  const enableSync = useCallback(async (passphrase: string) => {
+    const open = vault.current;
+    if (!open) throw new Error("Unlock Folio first.");
+    try {
+      await unlockVault(passphrase);
+    } catch {
+      throw new Error("That passphrase doesn't open this vault.");
+    }
+    const secretKey = newSecretKey();
+    const keys = await deriveSyncKeys(secretKey, passphrase);
+    const data = dataRef.current;
+    const r = await syncRequest("PUT", keys, { base: 0, blob: await seal(keys.key, data) });
+    if (r.status === 409) throw new Error("Couldn't start sync. Try again.");
+    const state = { secretKey, keyRaw: await exportKey(keys.key), version: r.version!, base: data, lastSync: Date.now() };
+    await saveSyncState(open, state);
+    await getEngine().start(state);
+    return secretKey;
+  }, [getEngine]);
+
+  const disableSync = useCallback(async () => {
+    const key = engineRef.current?.secretKey;
+    if (key) {
+      try {
+        await syncRequest("DELETE", await deriveSyncIds(key));
+      } catch (e) {
+        // A copy that's already gone is fine; anything else should be retried.
+        if (!(e instanceof SyncError && e.status === 404)) throw e;
+      }
+    }
+    getEngine().stop();
+    await clearSyncState();
+  }, [getEngine]);
+
+  const restore = useCallback(async (secretKeyInput: string, passphrase: string) => {
+    const secretKey = normalizeSecretKey(secretKeyInput);
+    if (!secretKey) throw new Error("That Secret Key isn't complete. Check it against your Recovery Kit.");
+    const keys = await deriveSyncKeys(secretKey, passphrase);
+    let r;
+    try {
+      r = await syncRequest("GET", keys);
+    } catch (e) {
+      if (e instanceof SyncError && e.status === 404) throw new Error("No synced vault uses that Secret Key. Check it against your Recovery Kit.");
+      throw e;
+    }
+    let remote: VaultData;
+    try {
+      remote = await unseal<VaultData>(keys.key, r.blob!);
+    } catch {
+      throw new Error("That passphrase doesn't open this synced vault.");
+    }
+    getEngine().stop();
+    await clearSyncState();
+    const open = await createVault(passphrase, remote);
+    vault.current = open;
+    const state = { secretKey, keyRaw: await exportKey(keys.key), version: r.version!, base: remote, lastSync: Date.now() };
+    await saveSyncState(open, state);
+    void rememberSession(open);
+    dataRef.current = remote;
+    setData(remote);
+    setStatus("open");
+    await getEngine().start(state);
+  }, [getEngine]);
+
+  const syncNow = useCallback(() => getEngine().pull(), [getEngine]);
+  const sync = useMemo(() => ({ ...syncStatus, secretKey: syncStatus.secretKey ?? null }), [syncStatus]);
+
   const value = useMemo(
     () => ({
       status,
@@ -256,8 +375,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteCash,
       setChat,
       applyImport,
+      sync,
+      enableSync,
+      disableSync,
+      restore,
+      syncNow,
     }),
-    [status, data, create, unlock, lock, addAccount, upsertAsset, updateAsset, addTxn, deleteTxn, addCash, deleteCash, setChat, applyImport],
+    [status, data, create, unlock, lock, addAccount, upsertAsset, updateAsset, addTxn, deleteTxn, addCash, deleteCash, setChat, applyImport, sync, enableSync, disableSync, restore, syncNow],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

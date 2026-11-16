@@ -300,7 +300,7 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-label={title}
-        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] bg-surface p-6 shadow-pop sm:rounded-[30px] sm:p-7 ${wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
+        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-pop sm:rounded-[30px] sm:p-7 ${wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
       >
         <div className="mb-5 flex items-center justify-between gap-3">
           {header ?? <h2 className="text-lg font-bold">{title}</h2>}
