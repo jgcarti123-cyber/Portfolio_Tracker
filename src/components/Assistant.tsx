@@ -10,6 +10,7 @@ import { closeAt } from "@/lib/networth";
 import { convert, replay, type Position, type Totals } from "@/lib/portfolio";
 import { fetchHistory, searchAssets } from "@/lib/prices";
 import { useStore } from "@/lib/store";
+import { maskText, usePrivacy } from "@/lib/privacy";
 import type { Today } from "@/lib/today";
 import { heldHistory, parseCashLocally, resolveTrade, type ParsedTrade } from "@/lib/tradeText";
 import { CLASS_META, quoteKey, type Asset, type AssetClass, type Candle, type ChatCard, type ChatMessage, type Currency, type Quote, type SearchHit } from "@/lib/types";
@@ -89,6 +90,7 @@ const SNAP: Record<Snap, string> = { peek: "84px", half: "56dvh", full: "92dvh" 
 export function Assistant(props: Props) {
   const { open, onClose, positions, totals, today, series, currency, usdInr } = props;
   const { data, setChat } = useStore();
+  const { hidden } = usePrivacy();
   const ai = useAi();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -277,7 +279,7 @@ export function Assistant(props: Props) {
                 </Bubble>
                 {messages.map((m) => (
                   <div key={m.id} className="item-in space-y-2">
-                    <Bubble role={m.role}>{m.role === "assistant" ? <Rich text={m.text} /> : m.text}</Bubble>
+                    <Bubble role={m.role}>{m.role === "assistant" ? <Rich text={hidden ? maskText(m.text) : m.text} /> : m.text}</Bubble>
                     {m.card?.kind === "trade" && <TradeCard card={m.card} positions={positions} currency={currency} usdInr={usdInr} onUpdate={(p) => updateCard(m.id, p)} onSaved={props.onSaved} />}
                     {m.card?.kind === "cash" && <CashActionCard card={m.card} onUpdate={(p) => updateCard(m.id, p)} onSaved={props.onSaved} />}
                     {m.card?.kind === "whatif" && <WhatIfCard card={m.card} positions={positions} totals={totals} currency={currency} usdInr={usdInr} />}

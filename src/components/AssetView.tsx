@@ -11,6 +11,8 @@ import { AddTrade } from "./AddTrade";
 import { AssetBadge } from "./Holdings";
 import { PriceWhatIf } from "./PriceWhatIf";
 import { PriceChart, type ChartControls, type ChartPoint, type ChartTrade } from "./PriceChart";
+import { buyCard, holdingCard, sellCard, type CardData } from "@/lib/shareCard";
+import { ShareCard, ShareIcon } from "./ShareCard";
 import { ExternalIcon, TradingViewChart, tvEmbeddable, tvSymbol, tvUrl } from "./TradingView";
 import { BigFigure, Button, Card, Delta, Icon, Segmented, useAnimatedNumber } from "./ui";
 
@@ -58,6 +60,7 @@ export function AssetView({
   const [source, setSource] = useState<"folio" | "tv">("folio");
   const [flash, setFlash] = useState<string | null>(null);
   const [panel, setPanel] = useState<"whatif" | "trades">("whatif");
+  const [card, setCard] = useState<CardData | null>(null);
 
   const txns = useMemo(() => data.txns.filter((t) => t.assetId === asset.id).sort((a, b) => b.ts - a.ts), [data.txns, asset.id]);
   const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? "Unknown";
@@ -126,10 +129,23 @@ export function AssetView({
         <button type="button" onClick={onBack} className="pill press inline-flex h-9 items-center gap-1.5 rounded-full pl-3 pr-4 text-[13px] font-semibold text-ink-2 hover:text-ink">
           {Icon.back} All holdings
         </button>
-        <button type="button" onClick={() => setAdding(true)} className="cta press streak-host relative inline-flex h-9 items-center gap-1.5 rounded-full pl-3.5 pr-4 text-[13px] font-semibold">
-          <span className="streak-clip" aria-hidden />
-          {Icon.plus} Add a trade
-        </button>
+        <div className="flex items-center gap-2">
+          {position && position.qty > 0 && (
+            <button
+              type="button"
+              onClick={() => setCard(holdingCard(position, txns))}
+              aria-label="Share this holding"
+              data-tip="Share card"
+              className="pill press grid size-9 place-items-center rounded-full text-ink-2 hover:text-ink"
+            >
+              {ShareIcon}
+            </button>
+          )}
+          <button type="button" onClick={() => setAdding(true)} className="cta press streak-host relative inline-flex h-9 items-center gap-1.5 rounded-full pl-3.5 pr-4 text-[13px] font-semibold">
+            <span className="streak-clip" aria-hidden />
+            {Icon.plus} Add a trade
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:h-[clamp(600px,calc(100dvh-188px),820px)] lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -377,6 +393,16 @@ export function AssetView({
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <span className="num font-semibold">{money(t.qty * t.price, cur)}</span>
+                        {!opening && (
+                          <button
+                            type="button"
+                            aria-label={`Share this ${t.type === "buy" ? "buy" : "sale"}`}
+                            onClick={() => setCard(t.type === "buy" ? buyCard(t, asset, position) : sellCard(t, asset, txns))}
+                            className="grid size-7 place-items-center rounded-full text-ink-3 transition-opacity hover:bg-sunken hover:text-ink focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            {ShareIcon}
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label="Delete this trade"
@@ -399,6 +425,7 @@ export function AssetView({
         </Card>
       </div>
 
+      {card && <ShareCard data={card} onClose={() => setCard(null)} />}
       {adding && <AddTrade asset={asset} onClose={() => setAdding(false)} onSaved={onSaved} />}
     </div>
   );

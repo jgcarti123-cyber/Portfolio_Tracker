@@ -362,6 +362,17 @@ export const Icon = {
       <path d="M7 2v10M2 7h10" />
     </svg>
   ),
+  eye: (
+    <svg width="15" height="15" viewBox="0 0 16 16" {...stroke}>
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" />
+      <circle cx="8" cy="8" r="2" />
+    </svg>
+  ),
+  eyeOff: (
+    <svg width="15" height="15" viewBox="0 0 16 16" {...stroke}>
+      <path d="M6.6 3.7A6.6 6.6 0 0 1 8 3.5C12 3.5 14.5 8 14.5 8a12 12 0 0 1-1.8 2.4M10.1 10.2A3 3 0 0 1 8 11c-.2 0-.3 0-.5 0M4.2 4.9C2.5 6.1 1.5 8 1.5 8S4 12.5 8 12.5c1 0 1.9-.3 2.7-.7M6.6 6.6a2 2 0 0 0 2.8 2.8M2 2l12 12" />
+    </svg>
+  ),
   lock: (
     <svg width="14" height="14" viewBox="0 0 16 16" {...stroke}>
       <rect x="3" y="7" width="10" height="6.5" rx="1.5" />

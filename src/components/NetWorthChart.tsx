@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CASH_COLOR } from "@/lib/cash";
-import { compact, day, money, pct, signed } from "@/lib/format";
+import { amountsHidden, compact, day, money, pct, signed } from "@/lib/format";
 import type { DayValue } from "@/lib/networth";
 import type { Totals } from "@/lib/portfolio";
 import type { Today } from "@/lib/today";
@@ -113,8 +113,9 @@ function monotone(xs: number[], ys: number[], move = true) {
 /** A money figure set large: a small, quiet currency sign and light digits. */
 export function BigMoney({ value, currency }: { value: number; currency: Currency }) {
   const text = money(value, currency, { decimals: 0 });
-  const sign = text.match(/^-?[^\d-]+/)?.[0] ?? "";
-  const digits = text.slice(sign.length);
+  const hidden = amountsHidden();
+  const sign = hidden ? (currency === "INR" ? "₹" : "$") : (text.match(/^-?[^\d-]+/)?.[0] ?? "");
+  const digits = hidden ? "••••••" : text.slice(sign.length);
   return (
     <span className="num inline-flex items-start leading-none tracking-[-0.04em]" aria-label={text}>
       <span className="mr-1.5 mt-[0.16em] text-[0.42em] font-normal opacity-55">{sign.replace("-", "")}</span>

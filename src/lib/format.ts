@@ -2,7 +2,15 @@ import type { Currency } from "./types";
 
 const locale = (c: Currency) => (c === "INR" ? "en-IN" : "en-US");
 
+/** When on, amounts and unit counts come out masked (see lib/privacy). Prices and % never do. */
+let hide = false;
+export const setAmountsHidden = (v: boolean) => void (hide = v);
+export const amountsHidden = () => hide;
+const MASK = "••••";
+const sym = (c: Currency) => (c === "INR" ? "₹" : "$");
+
 export function money(n: number, c: Currency, opts: { decimals?: number } = {}) {
+  if (hide) return `${n < 0 ? "-" : ""}${sym(c)}${MASK}`;
   const decimals = opts.decimals ?? (Math.abs(n) >= 1000 ? 0 : 2);
   return new Intl.NumberFormat(locale(c), {
     style: "currency",
@@ -26,6 +34,7 @@ export function price(n: number, c: Currency) {
 
 /** ₹12.4L, ₹1.82Cr, $18.6K — for axis ticks and tight spots. */
 export function compact(n: number, c: Currency) {
+  if (hide) return `${n < 0 ? "-" : ""}${sym(c)}${MASK}`;
   const a = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (c === "INR") {
@@ -41,6 +50,7 @@ export function compact(n: number, c: Currency) {
 }
 
 export function qty(n: number) {
+  if (hide) return MASK;
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: n >= 100 ? 2 : 6 }).format(n);
 }
 

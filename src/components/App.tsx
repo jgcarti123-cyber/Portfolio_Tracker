@@ -12,6 +12,9 @@ import { useMood } from "@/lib/mood";
 import { AiProvider } from "@/lib/ai";
 import { StoreProvider, useStore } from "@/lib/store";
 import { ThemeProvider, useTheme } from "@/lib/theme";
+import { PrivacyProvider, usePrivacy } from "@/lib/privacy";
+import { portfolioCard, type CardData } from "@/lib/shareCard";
+import { ShareCard, ShareIcon } from "./ShareCard";
 import type { Currency } from "@/lib/types";
 import { AddHolding } from "./AddHolding";
 import { AiConsent } from "./AiConsent";
@@ -37,12 +40,14 @@ import { Button, Card, Icon, Modal, Segmented } from "./ui";
 export function App() {
   return (
     <ThemeProvider>
-      <StoreProvider>
-        <AiProvider>
-          <Shell />
-          <AiConsent />
-        </AiProvider>
-      </StoreProvider>
+      <PrivacyProvider>
+        <StoreProvider>
+          <AiProvider>
+            <Shell />
+            <AiConsent />
+          </AiProvider>
+        </StoreProvider>
+      </PrivacyProvider>
     </ThemeProvider>
   );
 }
@@ -58,9 +63,11 @@ function Portfolio() {
   const { data, lock, sync } = useStore();
   const [syncOpen, setSyncOpen] = useState(false);
   const { theme, toggle } = useTheme();
+  const privacy = usePrivacy();
   const [currency, setCurrency] = useState<Currency>("INR");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [card, setCard] = useState<CardData | null>(null);
   const [cashOpen, setCashOpen] = useState(false);
   const mood = useMood();
   // Which screen is showing lives in browser history, so Back, Forward and refresh work.
@@ -182,13 +189,39 @@ function Portfolio() {
                 currency={currency}
               />
             )}
+            {!openAsset && !empty && view === "dashboard" && (
+              <button
+                type="button"
+                // The whole portfolio's investments (not cash, and whatever the filter shows).
+                onClick={() => setCard(portfolioCard(positions, sumTotals(positions, currency, market.usdInr), currency, market.usdInr, todayMoves(positions, currency, market).total, data.txns.length ? Math.min(...data.txns.map((t) => t.ts)) : null))}
+                aria-label="Share your portfolio"
+                data-tip="Share card"
+                className="press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full"
+              >
+                <span className="streak-clip" aria-hidden />
+                {ShareIcon}
+              </button>
+            )}
             {!openAsset && !empty && (
               <button type="button" onClick={() => setImporting(true)} aria-label="Import holdings" data-tip="Import a statement" className="press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full">
                 <span className="streak-clip" aria-hidden />
                 {Icon.upload}
               </button>
             )}
-            <div role="toolbar" aria-label="Appearance, sync and lock" className="glass flex items-center rounded-full p-[3px]">
+            <div role="toolbar" aria-label="Privacy, appearance, sync and lock" className="glass flex items-center rounded-full p-[3px]">
+              <button
+                type="button"
+                onClick={privacy.toggle}
+                aria-pressed={privacy.hidden}
+                aria-label={privacy.hidden ? "Show amounts" : "Hide amounts"}
+                data-tip={privacy.hidden ? "Show amounts" : "Hide amounts"}
+                className="press glass-tool streak-host"
+              >
+                <span className="streak-clip" aria-hidden />
+                <span key={String(privacy.hidden)} className="pop-in">
+                  {privacy.hidden ? Icon.eyeOff : Icon.eye}
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={toggle}
@@ -363,6 +396,7 @@ function Portfolio() {
       )}
       {adding && <AddHolding onClose={() => setAdding(false)} onSaved={notify} />}
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} />}
+      {card && <ShareCard data={card} onClose={() => setCard(null)} />}
       {importing && <ImportFlow onClose={() => setImporting(false)} onSaved={notify} />}
       {cashOpen && (
         <Modal title="Cash" header={<span />} onClose={() => setCashOpen(false)} wide>
