@@ -58,12 +58,15 @@ export function Segmented<T extends string>({
   onChange,
   label,
   size = "md",
+  glass = false,
 }: {
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
   size?: "sm" | "md";
+  /** Frosted glass, for controls sitting on the masthead panorama. */
+  glass?: boolean;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
@@ -89,12 +92,12 @@ export function Segmented<T extends string>({
       ref={wrap}
       role="radiogroup"
       aria-label={label}
-      className="relative inline-flex rounded-full bg-sunken p-1 ring-1 ring-line"
+      className={`relative inline-flex rounded-full ${glass ? "glass p-[3px]" : "bg-sunken p-1 ring-1 ring-line"}`}
     >
       {thumb && (
         <span
           aria-hidden
-          className="absolute bottom-1 top-1 rounded-full bg-raised shadow-thumb"
+          className={`absolute rounded-full ${glass ? "glass-thumb bottom-[3px] top-[3px]" : "bottom-1 top-1 bg-raised shadow-thumb"}`}
           style={{
             left: 0,
             width: thumb.width,
@@ -113,8 +116,8 @@ export function Segmented<T extends string>({
             aria-checked={on}
             onClick={() => onChange(o.value)}
             className={`relative whitespace-nowrap rounded-full font-semibold transition-colors ${
-              size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-1.5 text-[13px]"
-            } ${on ? "text-ink" : "text-ink-2 hover:text-ink"}`}
+              glass ? "px-2 py-[7px] text-[12.5px] leading-4 sm:px-3" : size === "sm" ? "px-2.5 py-1 text-xs" : "px-3.5 py-1.5 text-[13px]"
+            } ${glass ? (on ? "text-white" : "text-white/60 hover:text-white/90") : on ? "text-ink" : "text-ink-2 hover:text-ink"}`}
           >
             {o.label}
           </button>
@@ -144,6 +147,22 @@ export function Button({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * A figure set large, like the dashboard's net worth: a small quiet currency sign and light
+ * digits. `text` is an already formatted amount ("$66.84", "-₹1,200", "+$17.41").
+ */
+export function BigFigure({ text, className = "" }: { text: string; className?: string }) {
+  const m = text.match(/^([+-]?)([^\d]*)(.*)$/);
+  const [, sign = "", cur = "", digits = text] = m ?? [];
+  return (
+    <span className={`num inline-flex items-start leading-none tracking-[-0.04em] ${className}`} aria-label={text}>
+      {sign && <span className="mr-[0.08em] mt-[0.1em] text-[0.62em] font-light">{sign === "-" ? "−" : "+"}</span>}
+      {cur && <span className="mr-1 mt-[0.16em] text-[0.42em] font-normal opacity-55">{cur.trim()}</span>}
+      <span className="font-light">{digits}</span>
+    </span>
   );
 }
 

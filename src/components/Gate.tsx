@@ -10,7 +10,7 @@ export function Logo({ tone = "ink" }: { tone?: "ink" | "white" }) {
       <span className="font-label text-[15px] font-extrabold uppercase leading-none tracking-[0.26em]" style={{ fontStretch: "125%" }}>
         Folio
       </span>
-      <span className="size-[6px] rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" aria-hidden />
+      <span className="logo-dot size-[6px] rounded-full bg-accent shadow-[0_0_8px_var(--accent)]" aria-hidden />
     </span>
   );
 }

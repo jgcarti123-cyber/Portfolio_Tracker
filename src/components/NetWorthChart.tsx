@@ -7,7 +7,7 @@ import type { DayValue } from "@/lib/networth";
 import type { Totals } from "@/lib/portfolio";
 import type { Today } from "@/lib/today";
 import { CLASS_META, type AssetClass, type Currency } from "@/lib/types";
-import { MOOD_FOR, MOOD_NAME, moodColor, moodPosition, type MoodReading } from "@/lib/mood";
+import { MOOD_FOR, MOOD_NAME, moodChange, moodColor, moodExplain, moodPosition, moodStamp, type MoodReading } from "@/lib/mood";
 import { MoodGauge } from "./MoodStrip";
 import { Segmented } from "./ui";
 
@@ -403,10 +403,17 @@ export function NetWorthChart({
             const r = moods.find((x) => x.key === k);
             const yours = today.byClass.filter((c) => MOOD_FOR[c.cls] === k).reduce((acc, c) => acc + c.total, 0);
             const pos = r ? moodPosition(r) : 0.5;
-            const delta = r && r.weekAgo !== null ? r.value - r.weekAgo : null;
+            const stamp = r ? moodStamp(r) : null;
+            const changes = r ? ([[moodChange(r, r.weekAgo), "7d"], [moodChange(r, r.monthAgo), "30d"]] as const).filter(([c]) => c) : [];
             return (
-              <div key={k} className={`flex items-center gap-3 ${i ? "md:pl-5" : ""} ${i < moodKeys.length - 1 ? "md:pr-5" : ""}`} title={r?.source}>
-                {r ? <MoodGauge reading={r} size={44} /> : <span className="size-[44px]" />}
+              <div key={k} className={`flex items-center gap-3 ${i ? "md:pl-5" : ""} ${i < moodKeys.length - 1 ? "md:pr-5" : ""}`} title={r ? moodExplain(r) : undefined}>
+                {r ? (
+                  <span className={stamp?.stale ? "opacity-55 saturate-[0.6]" : ""}>
+                    <MoodGauge reading={r} size={44} />
+                  </span>
+                ) : (
+                  <span className="size-[44px]" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="label truncate text-[9.5px] text-white/45">
                     {MOOD_NAME[k]} mood{r?.scale === "vix" ? " · VIX" : ""}
@@ -421,9 +428,17 @@ export function NetWorthChart({
                   ) : (
                     <p className="mt-0.5 text-[12px] text-white/45">Unavailable</p>
                   )}
-                  {delta !== null && (
-                    <p className="num mt-0.5 text-[10.5px] text-white/40">
-                      {delta > 0 ? "▲" : delta < 0 ? "▼" : "•"} {Math.abs(Math.round(delta * 10) / 10)} in 7 days
+                  {stamp && (
+                    <p className="num mt-1 flex min-w-0 items-center gap-1.5 text-[10.5px] text-white/40">
+                      <span className={`shrink-0 rounded-full px-1.5 text-[8.5px] font-semibold uppercase leading-[1.6] tracking-[0.1em] ${stamp.stale ? "bg-white/[0.07] text-white/45" : "bg-up/15 text-up"}`}>{stamp.text}</span>
+                      <span className="truncate">
+                        {changes.map(([c, span], j) => (
+                          <span key={span}>
+                            {j > 0 && " · "}
+                            {span} <span className={c!.size === 0 ? "" : c!.fearer ? "text-down" : "text-up"}>{c!.delta > 0 ? "▲" : c!.delta < 0 ? "▼" : "•"}{c!.size}</span>
+                          </span>
+                        ))}
+                      </span>
                     </p>
                   )}
                 </div>

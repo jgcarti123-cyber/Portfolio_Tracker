@@ -665,3 +665,478 @@ p {
     animation: none;
   }
 }
+
+/* ───────────── Masthead controls: liquid glass, an aurora-edged AI button, a white call to action ───────────── */
+
+/* Frosted glass that lets the panorama strip glow through: a bright top edge and a hairline rim. */
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.035));
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    inset 0 -9px 12px -11px rgba(255, 146, 92, 0.5),
+    0 8px 22px -12px rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 0.92);
+}
+.glass-btn {
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-btn:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.06));
+  color: #fff;
+}
+/* An on/active glass control: a little more light and a brighter rim. */
+.glass-on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.09));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 -9px 12px -10px rgba(255, 146, 92, 0.6),
+    0 8px 22px -12px rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+/* The sliding thumb inside a glass segmented control. */
+.glass-thumb {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 8px -2px rgba(0, 0, 0, 0.6);
+}
+/* Icon buttons sharing one glass capsule, split by hairlines. */
+.glass-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  border-radius: 9999px;
+  color: rgba(255, 255, 255, 0.72);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.glass-tool:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+@media (max-width: 639px) {
+  .glass-tool {
+    width: 30px;
+  }
+}
+.glass-tool + .glass-tool::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.glass-tool:hover::before,
+.glass-tool:hover + .glass-tool::before {
+  opacity: 0;
+}
+
+/* A small tooltip for icon-only controls. */
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translate(-50%, -3px);
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(14, 15, 19, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 10px 24px -10px rgba(0, 0, 0, 0.8);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 40;
+}
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (hover: hover) {
+  [data-tip]:hover::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 0.25s;
+  }
+}
+
+/* The primary action: an off-white pill with dark type. */
+.cta-white {
+  background: linear-gradient(180deg, #ffffff, #ebe7e1);
+  color: #0b0c0f;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1),
+    inset 0 -9px 12px -10px rgba(255, 150, 96, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 10px 26px -12px rgba(255, 255, 255, 0.4);
+  transition: box-shadow 0.2s ease, filter 0.2s ease;
+}
+.cta-white:hover {
+  filter: brightness(1.03);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1),
+    inset 0 -9px 12px -9px rgba(255, 150, 96, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 12px 30px -10px rgba(255, 255, 255, 0.55);
+}
+
+/* Ask Folio: dark glass with a slowly turning ring of light along its edge, and a soft glow behind. */
+@property --aurora {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+@keyframes aurora-turn {
+  to {
+    --aurora: 360deg;
+  }
+}
+.ai-btn {
+  --aurora-colors: #ff8fcf, #ffbe7a, #f7ef9a, #8ef5cf, #c3a6ff, #ff8fcf;
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(255, 255, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, #17181d, #0c0d10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -9px 12px -11px rgba(255, 146, 92, 0.55);
+  animation: aurora-turn 7s linear infinite;
+}
+.ai-btn::before,
+.ai-btn::after {
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  background: conic-gradient(from var(--aurora), var(--aurora-colors));
+  pointer-events: none;
+}
+/* The ring: the gradient, masked down to a 1.5px edge. */
+.ai-btn::before {
+  inset: 0;
+  padding: 1.5px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+/* The glow: the same light, blurred behind the button. */
+.ai-btn::after {
+  inset: 1px;
+  z-index: -1;
+  filter: blur(10px);
+  opacity: 0.45;
+  transition: opacity 0.3s ease;
+}
+.ai-btn:hover {
+  animation-duration: 2.8s;
+}
+.ai-btn:hover::after,
+.ai-btn[aria-pressed="true"]::after {
+  opacity: 0.8;
+}
+
+/* The logo's dot in the masthead: warm white light instead of blue. */
+.masthead .logo-dot {
+  background: #f6f1e7;
+  box-shadow: 0 0 10px rgba(255, 238, 214, 0.75);
+}
+.masthead :focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+}
+
+/* Panorama light trail: a soft streak of light sweeps across a control on hover. */
+.streak-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+.streak-clip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 50%;
+  background: linear-gradient(90deg, transparent, rgba(226, 236, 255, 0.4) 50%, rgba(255, 214, 190, 0.12) 70%, transparent);
+  transform: skewX(-24deg);
+  opacity: 0;
+}
+/* On the white button, a warm glint reads where a pale streak would vanish. */
+.cta-white .streak-clip::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 168, 120, 0.3) 50%, rgba(255, 210, 170, 0.12) 70%, transparent);
+}
+.streak-host:hover .streak-clip::before {
+  animation: streak 0.95s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes streak {
+  0% {
+    transform: skewX(-24deg) translateX(0);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    transform: skewX(-24deg) translateX(440%);
+    opacity: 0;
+  }
+}
+
+/* The assistant mark: a ringed planet; on hover the ring tips and a spark orbits it, passing behind. */
+.ai-orb {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+  flex: none;
+}
+.ai-orb-art {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+  filter: drop-shadow(0 0 4px rgba(255, 222, 240, 0.5));
+  transition: filter 0.4s ease;
+}
+.ai-orb-planet {
+  transform-origin: 10px 10px;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ai-orb-tilt,
+.ai-orb-orbit {
+  transform: rotate(-18deg);
+  transform-origin: 10px 10px;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ai-orb-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+.ai-orb-spark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 5px 1.5px rgba(255, 228, 206, 0.95);
+  offset-path: path("M0.8 10 A9.2 3.1 0 0 0 19.2 10 A9.2 3.1 0 0 0 0.8 10");
+  offset-rotate: 0deg;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.ai-orb-host:hover .ai-orb-tilt,
+.ai-orb-host:hover .ai-orb-orbit,
+.ai-orb-host[aria-pressed="true"] .ai-orb-tilt,
+.ai-orb-host[aria-pressed="true"] .ai-orb-orbit {
+  transform: rotate(-30deg);
+}
+.ai-orb-host:hover .ai-orb-planet {
+  transform: scale(1.08);
+}
+.ai-orb-host:hover .ai-orb-art,
+.ai-orb-host[aria-pressed="true"] .ai-orb-art {
+  filter: drop-shadow(0 0 6px rgba(255, 214, 236, 0.95));
+}
+.ai-orb-host:hover .ai-orb-spark,
+.ai-orb-host[aria-pressed="true"] .ai-orb-spark {
+  opacity: 1;
+  animation: orb-spark 1.9s linear infinite;
+}
+.ai-orb-host:hover .ai-orb-orbit,
+.ai-orb-host[aria-pressed="true"] .ai-orb-orbit {
+  animation: orb-depth 1.9s linear infinite;
+}
+/* Front half of the path first (bigger, over the planet), then the back half (smaller, behind it). */
+@keyframes orb-spark {
+  0% {
+    offset-distance: 0%;
+    transform: scale(0.8);
+  }
+  25% {
+    offset-distance: 25%;
+    transform: scale(1.2);
+  }
+  50% {
+    offset-distance: 50%;
+    transform: scale(0.8);
+  }
+  75% {
+    offset-distance: 75%;
+    transform: scale(0.5);
+  }
+  100% {
+    offset-distance: 100%;
+    transform: scale(0.8);
+  }
+}
+@keyframes orb-depth {
+  0%,
+  49.9% {
+    z-index: 2;
+  }
+  50%,
+  100% {
+    z-index: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-btn {
+    animation: none;
+    --aurora: 210deg;
+  }
+  .streak-host:hover .streak-clip::before,
+  .ai-orb-host:hover .ai-orb-spark,
+  .ai-orb-host:hover .ai-orb-orbit,
+  .ai-orb-host[aria-pressed="true"] .ai-orb-spark,
+  .ai-orb-host[aria-pressed="true"] .ai-orb-orbit {
+    animation: none;
+  }
+}
+
+
+
+
+/* ───────────── Asset page: theme-aware primary and quiet pills, what-if fields ───────────── */
+
+:root {
+  --cta-bg: linear-gradient(180deg, #2a2c31, #101114);
+  --cta-ink: #fbfaf7;
+  --cta-edge: rgba(255, 255, 255, 0.16);
+  --cta-lift: 0 10px 24px -12px rgba(17, 18, 20, 0.55);
+  --pill-bg: linear-gradient(180deg, #ffffff, #f7f6f2);
+  --pill-edge: rgba(17, 18, 20, 0.09);
+  --pill-top: rgba(255, 255, 255, 1);
+  --pill-lift: 0 6px 16px -12px rgba(17, 18, 20, 0.35);
+}
+:root[data-theme="dark"] {
+  --cta-bg: linear-gradient(180deg, #ffffff, #ebe7e1);
+  --cta-ink: #0b0c0f;
+  --cta-edge: rgba(255, 255, 255, 1);
+  --cta-lift: 0 10px 26px -12px rgba(255, 255, 255, 0.35);
+  --pill-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+  --pill-edge: rgba(255, 255, 255, 0.09);
+  --pill-top: rgba(255, 255, 255, 0.14);
+  --pill-lift: 0 8px 22px -12px rgba(0, 0, 0, 0.75);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --cta-bg: linear-gradient(180deg, #ffffff, #ebe7e1);
+    --cta-ink: #0b0c0f;
+    --cta-edge: rgba(255, 255, 255, 1);
+    --cta-lift: 0 10px 26px -12px rgba(255, 255, 255, 0.35);
+    --pill-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+    --pill-edge: rgba(255, 255, 255, 0.09);
+    --pill-top: rgba(255, 255, 255, 0.14);
+    --pill-lift: 0 8px 22px -12px rgba(0, 0, 0, 0.75);
+  }
+}
+
+/* The page's primary action: white in the dark theme, ink in the light one, with the warm horizon inside. */
+.cta {
+  background: var(--cta-bg);
+  color: var(--cta-ink);
+  box-shadow:
+    inset 0 1px 0 var(--cta-edge),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    inset 0 -9px 12px -10px rgba(255, 150, 96, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    var(--cta-lift);
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+}
+.cta:hover {
+  filter: brightness(1.06);
+}
+.cta .streak-clip::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 168, 120, 0.35) 50%, rgba(255, 210, 170, 0.12) 70%, transparent);
+}
+
+/* A quiet pill: back buttons, chips. Glass in the dark theme, paper in the light one. */
+.pill {
+  background: var(--pill-bg);
+  box-shadow: inset 0 1px 0 var(--pill-top), inset 0 0 0 1px var(--pill-edge), var(--pill-lift);
+  transition: color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.pill:hover {
+  box-shadow: inset 0 1px 0 var(--pill-top), inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent), var(--pill-lift);
+}
+.pill[data-on="true"] {
+  background: var(--ink);
+  color: var(--canvas);
+  box-shadow: inset 0 -6px 10px -8px rgba(255, 150, 96, 0.55), 0 6px 16px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* What-if fields: a sunken well that lights its rim when you type in it. */
+.wi-field {
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 0.2s ease;
+}
+.wi-field:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 45%, transparent), 0 0 0 4px color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.wi-field input:focus-visible {
+  outline: none;
+}
+/* The profit figure glows softly in its own colour. */
+.wi-glow {
+  text-shadow: 0 0 28px color-mix(in srgb, currentColor 32%, transparent);
+}
+.wi-curve {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: ew-resize;
+}
+.wi-curve:focus,
+.wi-curve:focus-visible {
+  outline: none;
+}
+.wi-curve:focus-visible .wi-target-ring {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+@keyframes wi-pulse {
+  0%,
+  100% {
+    r: 7;
+    opacity: 0.35;
+  }
+  50% {
+    r: 10;
+    opacity: 0.12;
+  }
+}
+.wi-halo {
+  animation: wi-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wi-halo {
+    animation: none;
+  }
+}
+
+
+
+/* The asset page's side panel scrolls on its own on desktop: a slim, quiet scrollbar. */
+.panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 18%, transparent) transparent;
+}

@@ -15,7 +15,8 @@ import { ThemeProvider, useTheme } from "@/lib/theme";
 import type { Currency } from "@/lib/types";
 import { AddHolding } from "./AddHolding";
 import { AiConsent } from "./AiConsent";
-import { Assistant, Sparkle } from "./Assistant";
+import { AiOrb } from "./AiOrb";
+import { Assistant } from "./Assistant";
 import { CashCard } from "./Cash";
 import { AssetView } from "./AssetView";
 import { InsightsPage } from "./insights/InsightsPage";
@@ -139,26 +140,24 @@ function Portfolio() {
                 onChange={(v) => go({ view: v, openId: null })}
                 label="Page"
                 size="sm"
+                glass
               />
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             {!empty && (
-              <button
-                type="button"
-                onClick={() => setAssistOpen((o) => !o)}
-                aria-pressed={assistOpen}
-                aria-label="Ask Folio, your portfolio assistant"
-                className={`press group inline-flex h-10 items-center gap-2 rounded-full pl-3 pr-3.5 text-[13px] font-semibold text-white shadow-[0_8px_20px_-10px_var(--accent)] transition-[filter,box-shadow] hover:brightness-110 max-sm:w-10 max-sm:justify-center max-sm:px-0 ${
-                  assistOpen ? "ring-2 ring-accent/40 ring-offset-2 ring-offset-canvas" : ""
-                }`}
-                style={{ background: "linear-gradient(135deg, var(--accent), var(--cat-4))" }}
-              >
-                <span className="transition-transform duration-500 group-hover:rotate-[20deg]">
-                  <Sparkle />
-                </span>
-                <span className="hidden sm:inline">Ask Folio</span>
-              </button>
+              // The tooltip sits on a wrapper: the button's own ::before/::after draw its light ring.
+              <span data-tip={assistOpen ? undefined : "Ask Folio"} className="relative mr-1 inline-flex max-sm:mr-0">
+                <button
+                  type="button"
+                  onClick={() => setAssistOpen((o) => !o)}
+                  aria-pressed={assistOpen}
+                  aria-label="Ask Folio, your portfolio assistant"
+                  className="press ai-btn ai-orb-host grid size-9 place-items-center rounded-full"
+                >
+                  <AiOrb />
+                </button>
+              </span>
             )}
             <Segmented
               options={[
@@ -169,6 +168,7 @@ function Portfolio() {
               onChange={setCurrency}
               label="Display currency"
               size="sm"
+              glass
             />
             {!openAsset && !empty && view === "dashboard" && (
               <FilterButton
@@ -181,29 +181,35 @@ function Portfolio() {
               />
             )}
             {!openAsset && !empty && (
-              <Button variant="ghost" onClick={() => setImporting(true)} aria-label="Import holdings" className="max-sm:w-10 max-sm:px-0">
-                {Icon.upload} <span className="hidden sm:inline">Import</span>
-              </Button>
+              <button type="button" onClick={() => setImporting(true)} aria-label="Import holdings" data-tip="Import a statement" className="press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full">
+                <span className="streak-clip" aria-hidden />
+                {Icon.upload}
+              </button>
             )}
+            <div role="toolbar" aria-label="Appearance and lock" className="glass flex items-center rounded-full p-[3px]">
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                data-tip={theme === "dark" ? "Light theme" : "Dark theme"}
+                className="press glass-tool streak-host"
+              >
+                <span className="streak-clip" aria-hidden />
+                <span key={theme} className="pop-in">
+                  {theme === "dark" ? Icon.sun : Icon.moon}
+                </span>
+              </button>
+              <button type="button" onClick={lock} aria-label="Lock" data-tip="Lock Folio" className="press glass-tool streak-host">
+                <span className="streak-clip" aria-hidden />
+                {Icon.lock}
+              </button>
+            </div>
             {!openAsset && !empty && (
-              <Button onClick={() => setAdding(true)}>
+              <button type="button" onClick={() => setAdding(true)} aria-label="Add a holding" className="press cta-white streak-host relative inline-flex h-9 items-center gap-1.5 rounded-full pl-3 pr-4 text-[13px] font-semibold tracking-[-0.005em] max-sm:w-9 max-sm:justify-center max-sm:px-0">
+                <span className="streak-clip" aria-hidden />
                 {Icon.plus} <span className="hidden sm:inline">Add a holding</span>
-                <span className="sm:hidden">Add</span>
-              </Button>
+              </button>
             )}
-            <Button
-              variant="ghost"
-              onClick={toggle}
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              className="w-10 px-0"
-            >
-              <span key={theme} className="pop-in">
-                {theme === "dark" ? Icon.sun : Icon.moon}
-              </span>
-            </Button>
-            <Button variant="ghost" onClick={lock} aria-label="Lock" className="w-10 px-0">
-              {Icon.lock}
-            </Button>
           </div>
         </div>
         {!openAsset && !empty && view === "dashboard" && (

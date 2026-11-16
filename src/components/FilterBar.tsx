@@ -94,14 +94,13 @@ export function FilterButton({
         aria-expanded={open}
         aria-label={n ? `Filters, ${n} on` : "Filters"}
         onClick={() => setOpen(!open)}
-        className={`press inline-flex h-10 items-center gap-2 rounded-full px-3.5 text-[13px] font-semibold ring-1 transition-colors max-sm:w-10 max-sm:justify-center max-sm:px-0 ${
-          n || open ? "bg-accent-soft text-accent ring-accent/30" : "bg-surface text-ink ring-line hover:bg-sunken"
-        }`}
+        data-tip={open ? undefined : n ? `Filters · ${n} on` : "Filter"}
+        className={`press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full ${n || open ? "glass-on" : ""}`}
       >
+        <span className="streak-clip" aria-hidden />
         {FilterIcon}
-        <span className="hidden sm:inline">Filter</span>
         {n > 0 && (
-          <span className="num grid size-[18px] place-items-center rounded-full bg-accent text-[11px] text-white max-sm:absolute max-sm:-right-1 max-sm:-top-1">{n}</span>
+          <span className="num absolute -right-1 -top-1 grid size-[17px] place-items-center rounded-full bg-white text-[10.5px] font-semibold text-[#0b0c0f] shadow-[0_2px_6px_rgba(0,0,0,0.5)]">{n}</span>
         )}
       </button>
 

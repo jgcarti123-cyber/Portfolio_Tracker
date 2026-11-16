@@ -293,20 +293,26 @@ export function PriceChart({
       const m = measureRef.current;
       if (m?.dragging && m.b !== i) setMeasure({ ...m, b: i });
     });
+    // Resizing keeps the zoom; only an un-zoomed chart re-fits to fill its new width. Whether it
+    // was un-zoomed is remembered from before the resize, because the chart keeps its bar spacing
+    // on resize and the visible range has already shrunk by the time the observer runs.
+    let lastW = el.current.clientWidth;
+    let atFull = true;
+    const isFull = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      const n = dataRef.current.length;
+      return !r || (r.from <= 0.5 && r.to >= n - 1.5);
+    };
     const moved = () =>
       requestAnimationFrame(() => {
+        if ((el.current?.clientWidth ?? 0) === lastW) atFull = isFull();
         place();
         checkZoom();
       });
     chart.timeScale().subscribeVisibleLogicalRangeChange(moved);
-    // Resizing keeps the zoom; only an un-zoomed chart re-fits to fill its new width.
-    let lastW = el.current.clientWidth;
     const ro = new ResizeObserver(() =>
       requestAnimationFrame(() => {
         const w = el.current?.clientWidth ?? 0;
-        const r = chart.timeScale().getVisibleLogicalRange();
-        const n = dataRef.current.length;
-        const atFull = !r || (r.from <= 0.5 && r.to >= n - 1);
         if (w !== lastW && atFull) chart.timeScale().fitContent();
         lastW = w;
         place();

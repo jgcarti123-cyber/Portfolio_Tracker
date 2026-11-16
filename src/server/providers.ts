@@ -2,7 +2,7 @@
  * Price providers. The server only ever sees instrument symbols — never
  * quantities, accounts or anything that identifies a user.
  *   stocks  -> Yahoo Finance (unofficial)
- *   crypto  -> CoinGecko
+ *   crypto  -> CoinGecko (search, quotes; history backup), Coinbase Exchange (history)
  *   funds   -> mfapi.in (AMFI NAVs)
  *   USD/INR -> Frankfurter (ECB reference rates)
  *   mood    -> alternative.me (crypto), Tickertape MMI (India), VIX via Yahoo (US)
@@ -160,6 +160,121 @@ async function cgSearch(q: string): Promise<SearchHit[]> {
   }));
 }
 
+/* ----------------------- Coinbase Exchange (crypto history) ----------------------- */
+
+const CB = "https://api.exchange.coinbase.com";
+const CB_HEADERS = { "User-Agent": "Folio/1.0", Accept: "application/json" };
+
+async function cbJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: CB_HEADERS, signal: AbortSignal.timeout(12_000), cache: "no-store" });
+  if (!res.ok) throw new Error(`${res.status} from Coinbase`);
+  return (await res.json()) as T;
+}
+
+/** Coinbase's USD products by base ticker, with the coin's full name. Refreshed daily. */
+async function cbProducts(): Promise<Map<string, string>> {
+  return cached("cb:products", 24 * 60 * MIN, async () => {
+    const [products, currencies] = await Promise.all([
+      cbJson<{ id: string; base_currency: string; quote_currency: string; status: string; trading_disabled?: boolean }[]>(`${CB}/products`),
+      cbJson<{ id: string; name: string }[]>(`${CB}/currencies`),
+    ]);
+    const names = new Map(currencies.map((c) => [c.id, c.name]));
+    const out = new Map<string, string>();
+    for (const p of products) {
+      if (p.quote_currency === "USD" && p.status === "online" && !p.trading_disabled) out.set(p.base_currency, names.get(p.base_currency) ?? p.base_currency);
+    }
+    return out;
+  });
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/**
+ * The Coinbase product for a CoinGecko coin, or null. A ticker alone can be shared by unrelated
+ * coins, so the match must be confirmed by name or by today's price agreeing with CoinGecko's.
+ */
+async function cbProductFor(id: string, ticker?: string): Promise<string | null> {
+  return cached(`cb:map:${id}:${ticker ?? ""}`, 6 * 60 * MIN, async () => {
+    const products = await cbProducts();
+    const base =
+      (ticker && products.has(ticker.toUpperCase()) ? ticker.toUpperCase() : null) ??
+      [...products.entries()].find(([, name]) => slug(name) === id)?.[0] ??
+      null;
+    if (!base) return null;
+    if (slug(products.get(base)!) === id) return `${base}-USD`;
+    // Names differ (e.g. "ripple" / "XRP"): accept only if prices agree within 10%.
+    const [cg, cb] = await Promise.all([
+      cgQuotes([id]).then((q) => q[id]?.usd ?? null).catch(() => null),
+      cbJson<{ price: string }>(`${CB}/products/${base}-USD/ticker`).then((t) => Number(t.price)).catch(() => null),
+    ]);
+    return cg && cb && Math.abs(cb / cg - 1) < 0.1 ? `${base}-USD` : null;
+  });
+}
+
+type CbCandle = [number, number, number, number, number, number]; // time, low, high, open, close, volume
+
+/** Candles between two times at one granularity, oldest first. Coinbase returns at most 300 per call. */
+async function cbCandles(product: string, granularity: number, from: number, to: number): Promise<Candle[]> {
+  const chunk = granularity * 300;
+  const windows: [number, number][] = [];
+  for (let end = to; end > from; end -= chunk) windows.push([Math.max(from, end - chunk), end]);
+  const parts = await Promise.all(
+    windows.map(([a, b]) =>
+      cbJson<CbCandle[]>(
+        `${CB}/products/${product}/candles?granularity=${granularity}&start=${new Date(a * 1000).toISOString()}&end=${new Date(b * 1000).toISOString()}`,
+      ),
+    ),
+  );
+  const seen = new Map<number, Candle>();
+  for (const part of parts) for (const [t, l, h, o, c] of part) seen.set(t, { t, o, h, l, c });
+  return [...seen.values()].sort((a, b) => a.t - b.t);
+}
+
+/** Merge daily candles into weeks (for the 5-year view, matching the stocks' weekly bars). */
+function weekly(days: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  for (const d of days) {
+    const wk = Math.floor(d.t / (7 * 86400));
+    const last = out.at(-1);
+    if (last && Math.floor(last.t / (7 * 86400)) === wk) {
+      last.h = Math.max(last.h, d.h);
+      last.l = Math.min(last.l, d.l);
+      last.c = d.c;
+    } else out.push({ ...d });
+  }
+  return out;
+}
+
+const CB_RANGE: Record<Range, { gran: number; days: number }> = {
+  "1D": { gran: 300, days: 1 },
+  "1W": { gran: 3600, days: 7 },
+  "1M": { gran: 21600, days: 30 },
+  "3M": { gran: 86400, days: 92 },
+  "1Y": { gran: 86400, days: 366 },
+  "5Y": { gran: 86400, days: 1827 },
+};
+
+/** USD candles from Coinbase; rupee charts use each candle's day's ECB USD/INR rate. */
+async function cbHistory(product: string, cur: Currency, range: Range, daily: boolean): Promise<Candle[]> {
+  const r = daily ? "1Y" : range;
+  const { gran, days } = CB_RANGE[r];
+  const usd = await cached(`cb:h:${product}:${r}`, r === "1D" ? 2 * MIN : r === "1W" ? 10 * MIN : 30 * MIN, async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const c = await cbCandles(product, gran, now - days * 86400, now);
+    if (!c.length) throw new Error("No Coinbase data for " + product);
+    return r === "5Y" ? weekly(c) : c;
+  });
+  const out = daily ? usd.map((c) => ({ t: c.t, o: c.c, h: c.c, l: c.c, c: c.c })) : usd;
+  if (cur === "USD") return out;
+  const { series } = await fx();
+  let k = 0;
+  return out.map((c) => {
+    while (k + 1 < series.length && series[k + 1].t <= c.t) k++;
+    const rate = series[k].c;
+    return { t: c.t, o: c.o * rate, h: c.h * rate, l: c.l * rate, c: c.c * rate };
+  });
+}
+
 /* ----------------------------- mfapi.in (funds) ---------------------------- */
 
 interface MfHistory {
@@ -203,6 +318,8 @@ export interface Instrument {
   cls: AssetClass;
   symbol: string;
   currency: Currency;
+  /** Exchange ticker (e.g. "BTC"), used to find a coin on Coinbase. */
+  ticker?: string;
 }
 
 export async function search(q: string, cls: AssetClass): Promise<SearchHit[]> {
@@ -259,7 +376,18 @@ export async function quotes(items: Instrument[]): Promise<Record<string, Quote>
 const RANGE_DAYS: Record<Range, number> = { "1D": 7, "1W": 14, "1M": 31, "3M": 92, "1Y": 366, "5Y": 1827 };
 
 export async function history(i: Instrument, range: Range, daily: boolean): Promise<Candle[]> {
-  if (i.cls === "crypto") return cgHistory(i.symbol, i.currency, range, daily);
+  if (i.cls === "crypto") {
+    // Coinbase first (no key, generous limits, finer bars); CoinGecko for coins it doesn't list.
+    const product = await cbProductFor(i.symbol, i.ticker).catch(() => null);
+    if (product) {
+      try {
+        return await cbHistory(product, i.currency, range, daily);
+      } catch {
+        /* fall through to CoinGecko */
+      }
+    }
+    return cgHistory(i.symbol, i.currency, range, daily);
+  }
   if (i.cls === "mf") {
     const s = await mfSeries(i.symbol);
     const from = Date.now() / 1000 - RANGE_DAYS[daily ? "1Y" : range] * 86400;
@@ -294,6 +422,8 @@ export interface MoodReading {
   label: string;
   /** "index" = 0–100, higher is greed; "vix" = volatility level, higher is fear. */
   scale: "index" | "vix";
+  /** 0 = deepest fear, 1 = most greed. For indices, value / 100; for VIX, the share of the past year's closes above today's (how much calmer today is). */
+  position: number;
   weekAgo: number | null;
   monthAgo: number | null;
   asOf: number;
@@ -301,7 +431,8 @@ export interface MoodReading {
   history: { t: number; v: number }[];
 }
 
-const vixLabel = (v: number) => (v < 15 ? "Calm" : v < 20 ? "Normal" : v < 30 ? "Nervous" : "Fearful");
+/** VIX label from where today's level sits in its own past year (pos = share of the year's closes that were higher). */
+const vixLabel = (pos: number) => (pos < 0.2 ? "Very nervous" : pos < 0.4 ? "Nervous" : pos <= 0.6 ? "Typical" : pos <= 0.8 ? "Calm" : "Very calm");
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
 
 async function cryptoMood(): Promise<MoodReading> {
@@ -314,6 +445,7 @@ async function cryptoMood(): Promise<MoodReading> {
     value: Number(d[0].value),
     label: d[0].value_classification.replace(/^(\w)(.*)$/, (_, a: string, b: string) => a + b.toLowerCase()),
     scale: "index",
+    position: Number(d[0].value) / 100,
     weekAgo: d[7] ? Number(d[7].value) : null,
     monthAgo: d[30] ? Number(d[30].value) : null,
     asOf: Number(d[0].timestamp) * 1000,
@@ -336,6 +468,7 @@ async function indiaMood(): Promise<MoodReading> {
     // Tickertape's own zones: under 30 extreme fear, 30–50 fear, 50–70 greed, above 70 extreme greed.
     label: d.indicator < 30 ? "Extreme fear" : d.indicator < 50 ? "Fear" : d.indicator < 70 ? "Greed" : "Extreme greed",
     scale: "index",
+    position: Math.max(0, Math.min(1, d.indicator / 100)),
     weekAgo: d.lastWeek ? Math.round(d.lastWeek.indicator * 10) / 10 : null,
     monthAgo: d.lastMonth ? Math.round(d.lastMonth.indicator * 10) / 10 : null,
     asOf: Date.parse(d.date),
@@ -344,32 +477,37 @@ async function indiaMood(): Promise<MoodReading> {
 }
 
 async function usMood(): Promise<MoodReading> {
-  const c = await yahooHistory("^VIX", "1M");
-  if (!c.length) throw new Error("No VIX");
+  // A year of daily closes: today's VIX is ranked against them, so "calm" means calm for this market lately.
+  const c = await yahooHistory("^VIX", "1Y");
+  if (c.length < 60) throw new Error("No VIX");
   const last = c[c.length - 1];
   const at = (days: number) => {
     const target = last.t - days * 86400;
     const hit = [...c].reverse().find((x) => x.t <= target);
     return hit ? Math.round(hit.c * 10) / 10 : null;
   };
+  const position = c.filter((x) => x.c > last.c).length / c.length;
   return {
     key: "us",
     source: "CBOE Volatility Index (VIX)",
     value: Math.round(last.c * 10) / 10,
-    label: vixLabel(last.c),
+    label: vixLabel(position),
     scale: "vix",
+    position,
     weekAgo: at(7),
-    monthAgo: at(28),
+    monthAgo: at(30),
     asOf: last.t * 1000,
-    history: c.map((x) => ({ t: x.t * 1000, v: Math.round(x.c * 10) / 10 })),
+    history: c.slice(-30).map((x) => ({ t: x.t * 1000, v: Math.round(x.c * 10) / 10 })),
   };
 }
 
 /** Mood for each market; a market whose source fails is simply missing (never guessed). */
 export async function mood(): Promise<{ readings: MoodReading[]; missing: MoodReading["key"][] }> {
-  return cached("mood", 30 * MIN, async () => {
+  // Each source is cached on its own, so one slow or failing source doesn't refetch the others,
+  // and a failed refresh falls back to that source's last good reading.
+  return cached("mood", 5 * MIN, async () => {
     const keys = ["crypto", "india", "us"] as const;
-    const results = await Promise.allSettled([cryptoMood(), indiaMood(), usMood()]);
+    const results = await Promise.allSettled([cached("mood:crypto", 30 * MIN, cryptoMood), cached("mood:india", 15 * MIN, indiaMood), cached("mood:us", 15 * MIN, usMood)]);
     const readings: MoodReading[] = [];
     const missing: MoodReading["key"][] = [];
     results.forEach((r, i) => (r.status === "fulfilled" ? readings.push(r.value) : missing.push(keys[i])));

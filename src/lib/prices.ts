@@ -27,14 +27,14 @@ export const searchAssets = (q: string, cls: AssetClass, signal?: AbortSignal) =
   post<{ hits: SearchHit[] }>("/api/search", { q, cls }, signal).then((r) => r.hits);
 
 export const fetchHistory = (
-  a: Pick<Asset, "cls" | "symbol" | "currency">,
+  a: Pick<Asset, "cls" | "symbol" | "currency"> & { ticker?: string },
   range: Range,
   daily = false,
   signal?: AbortSignal,
 ) =>
   post<{ candles: Candle[] }>(
     "/api/history",
-    { cls: a.cls, symbol: a.symbol, currency: a.currency, range, daily },
+    { cls: a.cls, symbol: a.symbol, currency: a.currency, ticker: a.cls === "crypto" ? a.ticker : undefined, range, daily },
     signal,
   ).then((r) => r.candles);
 

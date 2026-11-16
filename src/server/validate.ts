@@ -9,11 +9,12 @@ export const isRange = (v: unknown): v is Range => RANGES.includes(v as Range);
 
 export function parseInstrument(v: unknown): Instrument | null {
   if (!v || typeof v !== "object") return null;
-  const { cls, symbol, currency } = v as Record<string, unknown>;
+  const { cls, symbol, currency, ticker } = v as Record<string, unknown>;
   if (!isClass(cls)) return null;
   if (typeof symbol !== "string" || !SYMBOL_RE.test(symbol)) return null;
   if (currency !== "INR" && currency !== "USD") return null;
-  return { cls, symbol, currency: currency as Currency };
+  const tick = typeof ticker === "string" && /^[A-Za-z0-9]{1,15}$/.test(ticker) ? ticker : undefined;
+  return { cls, symbol, currency: currency as Currency, ticker: tick };
 }
 
 export const bad = (message: string, status = 400) => Response.json({ error: message }, { status });
