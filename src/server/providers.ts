@@ -282,8 +282,45 @@ interface MfHistory {
   data: { date: string; nav: string }[];
 }
 
-/** NAV history, oldest first. */
+const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+/**
+ * Every fund's latest NAV straight from AMFI, which publishes each evening's NAVs hours before
+ * mfapi.in picks them up. Scheme code -> NAV and its date (UTC midnight, seconds).
+ */
+async function amfiLatest(): Promise<Map<string, { t: number; c: number }>> {
+  return cached("amfi:latest", 20 * MIN, async () => {
+    const res = await fetch("https://portal.amfiindia.com/spages/NAVAll.txt", {
+      signal: AbortSignal.timeout(20_000),
+      headers: { "user-agent": "Mozilla/5.0 (compatible; Folio)" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`${res.status} from AMFI`);
+    const out = new Map<string, { t: number; c: number }>();
+    for (const line of (await res.text()).split(/\r?\n/)) {
+      const cols = line.split(";");
+      if (cols.length < 6 || !/^\d+$/.test(cols[0])) continue;
+      const c = Number(cols[cols.length - 2]);
+      const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(cols[cols.length - 1].trim());
+      const mon = m && MONTHS[m[2].toLowerCase()];
+      if (!m || mon === undefined || mon === null || !isFinite(c) || c <= 0) continue;
+      out.set(cols[0], { t: Date.UTC(Number(m[3]), mon, Number(m[1])) / 1000, c });
+    }
+    if (out.size < 1000) throw new Error("AMFI file looked incomplete");
+    return out;
+  });
+}
+
+/** NAV history, oldest first, with tonight's NAV from AMFI added if mfapi.in hasn't caught up. */
 async function mfSeries(code: string): Promise<Candle[]> {
+  const [series, latest] = await Promise.all([mfapiSeries(code), amfiLatest().catch(() => null)]);
+  const l = latest?.get(code);
+  const last = series.at(-1);
+  if (!l || (last && l.t <= last.t)) return series;
+  return [...series, { t: l.t, o: l.c, h: l.c, l: l.c, c: l.c }];
+}
+
+async function mfapiSeries(code: string): Promise<Candle[]> {
   return cached(`mf:${code}`, 60 * MIN, async () => {
     const j = await getJson<MfHistory>(`https://api.mfapi.in/mf/${encodeURIComponent(code)}`);
     return j.data
