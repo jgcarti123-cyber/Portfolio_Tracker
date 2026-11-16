@@ -19,6 +19,7 @@ export function AiConsent() {
           <p className="mb-2 font-semibold text-ink">What&apos;s sent</p>
           <ul className="list-disc space-y-1 pl-5">
             <li>Reading a file: its column headings and the first eight rows.</li>
+            <li>Reading a screenshot: the picture, with every area you blacked out removed first.</li>
             <li>
               Asking the assistant: your question, the recent conversation, and your portfolio — each holding&apos;s name, type, broker, units,
               cost and value, every trade (date, units, price, broker) and today&apos;s moves.

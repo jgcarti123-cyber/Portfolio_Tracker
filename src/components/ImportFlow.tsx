@@ -21,6 +21,7 @@ import {
 import { convert, replay } from "@/lib/portfolio";
 import { useStore, type ImportRow } from "@/lib/store";
 import { CLASS_META, quoteKey, type Asset, type AssetClass, type Currency, type Quote } from "@/lib/types";
+import { ScreenshotIcon, ScreenshotImport } from "./ScreenshotImport";
 import { Button, Icon, Modal, Segmented } from "./ui";
 
 type Step = "source" | "upload" | "columns" | "review";
@@ -88,6 +89,7 @@ const bodyOf = (t: Table) => t.rows.slice(readHeader(t.rows).index + 1);
 export function ImportFlow({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: string) => void }) {
   const { data, applyImport } = useStore();
   const [step, setStep] = useState<Step>("source");
+  const [shots, setShots] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
 
   const firstClass = CLASS_BY_BROKER[data.accounts[0]?.id ?? ""] ?? "in_stock";
@@ -446,6 +448,8 @@ export function ImportFlow({ onClose, onSaved }: { onClose: () => void; onSaved?
     };
   })();
 
+  if (shots) return <ScreenshotImport onClose={onClose} onBack={() => setShots(false)} onSaved={onSaved} />;
+
   return (
     <Modal
       title="Import holdings"
@@ -478,6 +482,22 @@ export function ImportFlow({ onClose, onSaved }: { onClose: () => void; onSaved?
               Files are read in this browser and never uploaded. Only fund and stock identifiers are sent to look up
               live prices.
             </p>
+            <button
+              type="button"
+              onClick={() => setShots(true)}
+              className="item-in press group flex w-full items-start gap-3.5 rounded-[20px] border border-line p-4 text-left hover:border-ink-3"
+            >
+              <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-sunken text-ink ring-1 ring-line">{ScreenshotIcon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-[15px] font-bold">Screenshots of your holdings</span>
+                  <span className="rounded-full bg-sunken px-2 py-0.5 text-[11px] font-semibold text-ink-2 ring-1 ring-line">Read by AI</span>
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-2">
+                  Any broker or exchange app. You hide anything private first, then check every row before it&apos;s added.
+                </span>
+              </span>
+            </button>
             {SOURCES.map((s, i) => (
               <button
                 key={s.id}

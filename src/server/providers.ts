@@ -515,3 +515,18 @@ export async function mood(): Promise<{ readings: MoodReading[]; missing: MoodRe
     return { readings, missing };
   });
 }
+
+/**
+ * The NAV an app would have shown on a given day: the latest published NAV for today, and for
+ * an earlier day the last NAV published before it (apps show the previous day's NAV until the
+ * new one comes out at night). `day` is YYYY-MM-DD.
+ */
+export async function navOn(code: string, day: string): Promise<{ nav: number; date: string } | null> {
+  const s = await mfSeries(code);
+  if (!s.length) return null;
+  const todayIst = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10);
+  const [y, m, d] = day.split("-").map(Number);
+  const before = Date.UTC(y, m - 1, d) / 1000;
+  const c = day >= todayIst ? s[s.length - 1] : [...s].reverse().find((x) => x.t < before);
+  return c ? { nav: c.c, date: new Date(c.t * 1000).toISOString().slice(0, 10) } : null;
+}

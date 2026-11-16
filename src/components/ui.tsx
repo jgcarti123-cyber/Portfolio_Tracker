@@ -274,12 +274,15 @@ export function Modal({
   children,
   header,
   wide,
+  width,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   header?: ReactNode;
   wide?: boolean;
+  /** A custom maximum width in pixels on larger screens (overrides `wide`). */
+  width?: number;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -300,7 +303,8 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-label={title}
-        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-pop sm:rounded-[30px] sm:p-7 ${wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
+        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-pop sm:rounded-[30px] sm:p-7 ${width ? "sm:max-w-[var(--modal-w)]" : wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
+        style={width ? ({ "--modal-w": `${width}px` } as React.CSSProperties) : undefined}
       >
         <div className="mb-5 flex items-center justify-between gap-3">
           {header ?? <h2 className="text-lg font-bold">{title}</h2>}

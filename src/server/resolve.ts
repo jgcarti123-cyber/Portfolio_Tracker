@@ -25,7 +25,7 @@ export interface Resolved {
 }
 
 const HOUR = 3_600_000;
-type Fund = Resolved & { words: string; nav: number };
+type Fund = Resolved & { words: Words; nav: number };
 let amfi: { at: number; byIsin: Map<string, Resolved>; list: Fund[] } | null = null;
 let nse: { at: number; byIsin: Map<string, Resolved>; bySymbol: Map<string, Resolved> } | null = null;
 const memo = new Map<string, Resolved | null>();
@@ -48,7 +48,6 @@ const EXPAND: Record<string, string> = {
   g: "growth",
   gr: "growth",
   gw: "growth",
-  idcw: "idcw",
   div: "idcw",
   dividend: "idcw",
   mf: "",
@@ -58,14 +57,40 @@ const EXPAND: Record<string, string> = {
 const norm = (s: string) =>
   s
     .toLowerCase()
-    .replace(/[^a-z0-9&()]+/g, " ")
+    .replace(/[^a-z0-9&]+/g, " ")
     .split(" ")
     .map((w) => EXPAND[w] ?? w)
     .join(" ")
-    .replace(/\(.*?\)/g, " ") // "(erstwhile Bluechip Fund)" and similar notes
-    .replace(/\b(fund|scheme|plan|option|the|of|and|mutual)\b/g, " ")
+    .replace(/\b(fund|scheme|plan|option|the|of|and|mutual|erstwhile|formerly|known|as|earlier|renamed)\b/g, " ")
+    // "Mid Cap", "Mid-Cap" and "Midcap" are the same word; so are "Large & Mid Cap" and "Large and Midcap".
+    .replace(/\b(large|mid|small|flexi|multi|micro|focused) cap\b/g, "$1cap")
+    .replace(/\b(large|largecap) midcap\b/g, "largemidcap")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+
+/** Words that say which plan or payout a scheme is, not which scheme. */
+const PLAN = new Set(["direct", "regular"]);
+const PAYOUT = new Set(["growth", "idcw", "payout", "reinvestment", "reinvest", "bonus", "daily", "weekly", "fortnightly", "monthly", "quarterly", "half", "yearly", "annual", "annually"]);
+
+interface Words {
+  /** Words naming the scheme: AMC, category, index… */
+  core: Set<string>;
+  /** Former names from brackets: "(erstwhile Bluechip Fund)". */
+  alias: Set<string>;
+  plan: "direct" | "regular" | null;
+  payout: "growth" | "idcw" | null;
+}
+
+function words(name: string): Words {
+  const alias = new Set(
+    [...name.matchAll(/\(([^)]*)\)/g)].flatMap((m) => norm(m[1]).split(" ")).filter((w) => w.length > 1 && !PLAN.has(w) && !PAYOUT.has(w)),
+  );
+  const all = norm(name.replace(/\([^)]*\)/g, " ")).split(" ").filter(Boolean);
+  const core = new Set(all.filter((w) => w.length > 1 && !PLAN.has(w) && !PAYOUT.has(w)));
+  const plan = all.includes("direct") ? "direct" : all.includes("regular") ? "regular" : null;
+  const payout = all.some((w) => PAYOUT.has(w) && w !== "growth") ? "idcw" : all.includes("growth") ? "growth" : null;
+  return { core, alias, plan, payout };
+}
 
 async function loadAmfi() {
   if (amfi && Date.now() - amfi.at < 12 * HOUR) return amfi;
@@ -83,7 +108,7 @@ async function loadAmfi() {
         : scheme.trim();
     const r = { symbol: code, ticker: code, name, currency: "INR" as const };
     for (const isin of [isinA, isinB]) if (/^IN[A-Z0-9]{10}$/.test(isin?.trim())) byIsin.set(isin.trim(), r);
-    list.push({ ...r, words: norm(r.name), nav: Number(cols[cols.length >= 8 ? 6 : 4]) });
+    list.push({ ...r, words: words(r.name), nav: Number(cols[cols.length >= 8 ? 6 : 4]) });
   }
   amfi = { at: Date.now(), byIsin, list };
   return amfi;
@@ -107,27 +132,44 @@ async function loadNse() {
 }
 
 /**
- * Best fund for a free-text scheme name. Word overlap shortlists candidates; when the
- * statement implies a NAV, the candidate whose published NAV agrees wins, which tells
- * apart near-identical names like "Large Cap" and "Large & Mid Cap".
+ * Best fund for a free-text scheme name, or null when it isn't clear. The words that name a
+ * scheme must agree both ways, so "Axis Bluechip" never lands on "Axis Midcap" just because
+ * both are "Direct Growth"; a former name in brackets counts. When the plan or payout isn't
+ * stated and several funds fit, a NAV implied by the statement decides; otherwise nothing is
+ * guessed.
  */
 function matchFundName(name: string, list: Fund[], nav?: number) {
-  const want = norm(name).split(" ").filter((w) => w.length > 1);
-  if (!want.length) return null;
-  const scored = list
-    .map((f) => {
-      const have = new Set(f.words.split(" "));
-      let hits = 0;
-      for (const w of want) if (have.has(w)) hits++;
-      return { f, score: hits / Math.max(want.length, have.size) };
-    })
-    .filter((x) => x.score >= 0.45)
-    .sort((a, b) => b.score - a.score);
-  if (nav && nav > 0) {
-    const agreeing = scored.find((x) => x.f.nav > 0 && Math.abs(x.f.nav - nav) / nav < 0.03);
-    if (agreeing) return agreeing.f;
+  const q = words(name);
+  if (q.core.size < 2) return null;
+  const brand = norm(name).split(" ")[0];
+  const fits = list.flatMap((f) => {
+    const w = f.words;
+    if (!w.core.has(brand)) return [];
+    if (q.plan && w.plan && q.plan !== w.plan) return [];
+    if (q.payout && w.payout && q.payout !== w.payout) return [];
+    const known = (x: string) => w.core.has(x) || w.alias.has(x);
+    const missing = [...q.core].filter((x) => !known(x)).length;
+    const byAlias = [...q.core].some((x) => !w.core.has(x) && w.alias.has(x));
+    // Every word naming this fund must be in what was written (unless it was matched by its former name)…
+    const extra = [...w.core].filter((x) => !q.core.has(x)).length;
+    if (extra && !byAlias) return [];
+    // …and what was written may carry at most one word the fund's name doesn't (an old suffix like "Opportunities").
+    if (missing > (q.core.size >= 3 ? 1 : 0)) return [];
+    return [{ f, missing, extra }];
+  });
+  if (!fits.length) return null;
+  const best = Math.min(...fits.map((x) => x.missing + x.extra));
+  let top = fits.filter((x) => x.missing + x.extra === best).map((x) => x.f);
+  if (top.length > 1 && nav && nav > 0) {
+    const agreeing = top.filter((f) => f.nav > 0 && Math.abs(f.nav - nav) / nav < 0.03);
+    if (agreeing.length) top = agreeing;
   }
-  return scored[0] && scored[0].score >= 0.6 ? scored[0].f : null;
+  // Prefer schemes whose plan and payout are both spelled out over odd variants with neither.
+  if (top.length > 1) {
+    const full = top.filter((f) => f.words.plan && f.words.payout);
+    if (full.length) top = full;
+  }
+  return new Set(top.map((f) => f.name.toLowerCase())).size === 1 ? top[0] : null;
 }
 
 async function yahoo(q: string, cls: AssetClass): Promise<Resolved | null> {

@@ -142,7 +142,7 @@ export async function POST(req: Request) {
     // Fit the request into the provider's per-minute input budget: fewer trades first, then older messages.
     let maxTrades = 30;
     let portfolio = compact(context, maxTrades);
-    const size = () => tokens(SYSTEM) + tokens(portfolio) + history.reduce((s, m) => s + tokens(m.content) + 4, 0);
+    const size = () => tokens(SYSTEM) + tokens(portfolio) + history.reduce((s, m) => s + tokens(typeof m.content === "string" ? m.content : "") + 4, 0);
     while (size() > BUDGET && maxTrades > 10) portfolio = compact(context, (maxTrades = Math.floor(maxTrades / 2)));
     while (size() > BUDGET && history.length > 1) history = history.slice(1);
     if (size() > BUDGET * 1.4) return bad("Your portfolio is too large for the AI service's free limit. Try again with fewer holdings filtered, or use a paid AI plan.", 413);

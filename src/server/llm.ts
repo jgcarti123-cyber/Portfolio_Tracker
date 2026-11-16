@@ -14,9 +14,12 @@ export const llmInfo = () => ({
   provider: PROVIDER,
 });
 
+export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export interface Message {
   role: "system" | "user" | "assistant";
-  content: string;
+  /** Text, or text and images (only for a model that reads images). */
+  content: string | ContentPart[];
 }
 
 export class LlmError extends Error {
