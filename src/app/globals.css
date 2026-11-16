@@ -1148,3 +1148,9 @@ p {
 .toast {
   margin-bottom: env(safe-area-inset-bottom);
 }
+
+/* Display serif for the welcome headline (Instrument Serif). */
+.font-display {
+  font-family: var(--font-instrument), "Times New Roman", serif;
+}
+

@@ -242,6 +242,9 @@ function Portfolio() {
         )}
       </header>
 
+      {empty && !openAsset ? (
+        <Welcome onAdd={() => setAdding(true)} onImport={() => setImporting(true)} />
+      ) : (
       <div className={`mx-auto max-w-[1180px] px-4 pt-2 sm:px-6 ${assistOpen ? "pb-[60dvh] lg:pb-16" : "pb-16"}`}>
         {openAsset ? (
           <AssetView
@@ -251,8 +254,6 @@ function Portfolio() {
             onBack={() => (readRoute().openId ? window.history.back() : go({ view, openId: null }))}
             onSaved={notify}
           />
-        ) : empty ? (
-          <Welcome onAdd={() => setAdding(true)} onImport={() => setImporting(true)} />
         ) : view === "history" ? (
           <History data={data} currency={currency} usdInr={market.usdInr} onOpen={setOpenId} />
         ) : view === "insights" ? (
@@ -345,6 +346,7 @@ function Portfolio() {
           </main>
         )}
       </div>
+      )}
 
       {!empty && whole && (
         <Assistant
@@ -383,46 +385,57 @@ function Portfolio() {
   );
 }
 
+/**
+ * The first room after the vault is made: the unlock panorama carries on behind an editorial
+ * headline, with the header's white pill and glass button as the only two ways in.
+ */
 function Welcome({ onAdd, onImport }: { onAdd: () => void; onImport: () => void }) {
   return (
-    <main className="grid min-h-[70dvh] place-items-center">
-      <div className="max-w-[460px] text-center">
-        <svg width="200" height="110" viewBox="0 0 200 110" className="mx-auto" aria-hidden>
-          <defs>
-            <pattern id="w-stripe" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width="6" height="6" fill="var(--accent-soft)" />
-              <rect width="2.4" height="6" fill="var(--accent)" opacity="0.55" />
-            </pattern>
-          </defs>
-          {[34, 48, 42, 60, 54, 76, 70, 96].map((h, i) => (
-            <rect
-              key={i}
-              className="bar-rise"
-              style={{ animationDelay: `${i * 60}ms` }}
-              x={8 + i * 24}
-              y={104 - h}
-              width="16"
-              height={h}
-              rx="5"
-              fill={i === 7 ? "var(--accent)" : "url(#w-stripe)"}
-            />
-          ))}
-        </svg>
-        <h1 className="mt-8 text-[30px] font-extrabold leading-tight tracking-tight">
-          Start with one thing you own
-        </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
-          Pick a stock, fund or coin, then type what you put in and what it&apos;s worth today. Folio works
-          out the rest and tracks it from there, across every broker.
+    <main className="relative flex min-h-[calc(100dvh-64px)] flex-col overflow-hidden text-ink">
+
+      <p
+        className="label rise-in pointer-events-none absolute right-6 top-1/2 hidden -translate-y-1/2 text-ink-3/70 sm:block sm:right-10"
+        style={{ writingMode: "vertical-rl", animationDelay: "0.9s" }}
+        aria-hidden
+      >
+        Entry 001 · Awaiting
+      </p>
+
+      <div className="mx-auto flex w-full max-w-[1180px] flex-1 flex-col px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-10 sm:px-10 sm:pb-9">
+        <p className="label rise-in flex items-center gap-2.5 text-ink-3" style={{ animationDelay: "0.1s" }}>
+          <span className="size-[6px] rounded-full bg-up shadow-[0_0_10px_var(--up)]" aria-hidden />
+          PF-01 · Your ledger is ready
         </p>
-        <div className="mt-7 flex flex-wrap justify-center gap-2">
-          <Button onClick={onAdd} className="h-12 px-6 text-sm">
-            {Icon.plus} Add your first holding
-          </Button>
-          <Button variant="ghost" onClick={onImport} className="h-12 px-6 text-sm">
-            {Icon.upload} Import a statement
-          </Button>
+
+        <div className="mt-auto max-w-[760px] pt-24">
+          <h1 className="font-display text-[46px] font-normal leading-[0.98] tracking-[-0.015em] sm:text-[72px] lg:text-[88px]">
+            <span className="rise-in block" style={{ animationDelay: "0.25s" }}>
+              Your private ledger,
+            </span>
+            <span className="rise-in block italic text-ink-3" style={{ animationDelay: "0.4s" }}>
+              waiting for its first entry.
+            </span>
+          </h1>
+          <p className="rise-in mt-6 max-w-[520px] text-[15px] leading-relaxed text-ink-2 sm:text-[16px]" style={{ animationDelay: "0.55s" }}>
+            Add what you own, from any broker. Folio prices it live, draws its history and keeps every figure encrypted on this device.
+          </p>
+          <div className="rise-in mt-8 flex flex-wrap items-center gap-3" style={{ animationDelay: "0.7s" }}>
+            <button type="button" onClick={onAdd} className="press cta streak-host relative inline-flex h-12 items-center gap-2 rounded-full pl-5 pr-6 text-[14.5px] font-semibold tracking-[-0.005em]">
+              <span className="streak-clip" aria-hidden />
+              {Icon.plus} Add your first holding
+            </button>
+            <button type="button" onClick={onImport} className="press pill streak-host relative inline-flex h-12 items-center gap-2 rounded-full pl-5 pr-6 text-[14.5px] font-semibold text-ink">
+              <span className="streak-clip" aria-hidden />
+              {Icon.upload} Import a statement
+            </button>
+          </div>
         </div>
+
+        <footer className="rise-in mt-14 grid gap-x-8 gap-y-2 border-t border-line pt-5 sm:grid-cols-3" style={{ animationDelay: "0.9s" }}>
+          <span className="label text-ink-2">Indian &amp; US stocks · Funds · Crypto</span>
+          <span className="label text-ink-3 sm:text-center">Groww · INDmoney · CoinDCX · More</span>
+          <span className="label text-ink-3 sm:text-right">AES-256 · Encrypted on this device</span>
+        </footer>
       </div>
     </main>
   );
