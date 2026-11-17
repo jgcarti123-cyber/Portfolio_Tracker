@@ -1154,3 +1154,90 @@ p {
   font-family: var(--font-instrument), "Times New Roman", serif;
 }
 
+
+/* ───────────── The premium sheet: an always-dark faceplate for adding things ───────────── */
+
+/* A deep graphite slab: light falls on its top edge, a faint cool bloom sits behind the headline. */
+.sheet-premium {
+  --up: #3ddc84;
+  --up-soft: rgba(61, 220, 132, 0.14);
+  --down: #ff6b6b;
+  --down-soft: rgba(255, 107, 107, 0.14);
+  --scrim: rgba(4, 5, 7, 0.7);
+  --surface: rgba(255, 255, 255, 0.035);
+  --raised: rgba(255, 255, 255, 0.14);
+  --cta-bg: linear-gradient(180deg, #ffffff, #ebe7e1);
+  --cta-ink: #0b0c0f;
+  --cta-edge: rgba(255, 255, 255, 1);
+  --cta-lift: 0 10px 26px -12px rgba(255, 255, 255, 0.35);
+  --pill-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+  --pill-edge: rgba(255, 255, 255, 0.09);
+  --pill-top: rgba(255, 255, 255, 0.14);
+  --pill-lift: 0 8px 22px -12px rgba(0, 0, 0, 0.75);
+  background:
+    radial-gradient(520px 220px at 12% -6%, rgba(120, 150, 255, 0.13), transparent 70%),
+    radial-gradient(420px 200px at 100% 0%, rgba(255, 150, 96, 0.07), transparent 70%),
+    linear-gradient(180deg, #14161b, #0b0c0f 70%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 40px 100px -30px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.sheet-premium .field,
+.sheet-premium .field-wrap {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.sheet-premium .field:focus,
+.sheet-premium .field-wrap:focus-within {
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06), 0 0 28px -6px rgba(140, 170, 255, 0.35);
+}
+.sheet-premium .field-wrap input,
+.sheet-premium .field {
+  caret-color: #fff;
+}
+
+/* A choice tile on the dark sheet: glass at rest, lit from within in its own colour when chosen. */
+.tile {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  transition: box-shadow 0.25s ease, background 0.25s ease, transform 0.2s var(--ease-out-quint);
+}
+.tile:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.tile[aria-checked="true"] {
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tile) 26%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px color-mix(in srgb, var(--tile) 70%, transparent),
+    0 14px 34px -16px color-mix(in srgb, var(--tile) 70%, transparent);
+}
+
+/* The step rail: hairlines that fill with light. */
+.rail {
+  background: rgba(255, 255, 255, 0.08);
+}
+.rail > span {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.55), #fff);
+  box-shadow: 0 0 12px rgba(190, 210, 255, 0.7);
+}
+
+/* The read-back strip under the amounts. */
+.readout {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+/* An "AI" badge: a thin aurora ring. */
+.ai-tag {
+  background:
+    linear-gradient(var(--canvas), var(--canvas)) padding-box,
+    linear-gradient(90deg, #7aa3ff, #c58bff, #ff9a6b) border-box;
+  border: 1px solid transparent;
+}

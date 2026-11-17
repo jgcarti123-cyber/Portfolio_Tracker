@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { money, pct, price as fmtPrice, qty as fmtQty, signed, toLocalInput } from "@/lib/format";
 import { convert } from "@/lib/portfolio";
 import { searchAssets } from "@/lib/prices";
@@ -15,7 +15,9 @@ import {
   type Quote,
   type SearchHit,
 } from "@/lib/types";
-import { Button, Delta, Icon, Modal, MoneyInput, Segmented } from "./ui";
+import { CASH_COLOR } from "@/lib/cash";
+import { ScreenshotIcon } from "./ScreenshotImport";
+import { Delta, Icon, Modal, MoneyInput, Segmented } from "./ui";
 
 type Picked = Omit<Asset, "id">;
 type LiveState = {
@@ -90,20 +92,61 @@ export function ClassGlyph({ cls, size = 40 }: { cls: AssetClass; size?: number 
   );
 }
 
-export function AddHolding({ onClose, onSaved }: { onClose: () => void; onSaved?: (message: string) => void }) {
-  return <Wizard onClose={onClose} onSaved={onSaved} />;
+/** The sheet's primary action: the off-white pill from the masthead. */
+function Cta({ children, className = "", ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={`press cta-white streak-host relative inline-flex items-center justify-center gap-2 rounded-full px-5 text-[14.5px] font-semibold tracking-[-0.005em] disabled:pointer-events-none disabled:opacity-40 ${className}`}
+    >
+      <span className="streak-clip" aria-hidden />
+      {children}
+    </button>
+  );
+}
+
+const CASH_TILE = { short: "Cash", hint: "Rupees or dollars", color: CASH_COLOR, glyph: Icon.wallet };
+
+type Kind = AssetClass | "cash";
+
+export function AddHolding({
+  onClose,
+  onSaved,
+  onScreenshot,
+  startWith,
+}: {
+  onClose: () => void;
+  onSaved?: (message: string) => void;
+  /** Opens the screenshot importer instead (closing this sheet). */
+  onScreenshot?: () => void;
+  /** Opens straight on a type, e.g. "cash" from the dashboard. */
+  startWith?: Kind;
+}) {
+  return <Wizard onClose={onClose} onSaved={onSaved} onScreenshot={onScreenshot} startWith={startWith} />;
 }
 
 /* ------------------------------------------------------------------------ */
 /* New holding: what -> where -> how much                                     */
 /* ------------------------------------------------------------------------ */
 
-function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: string) => void }) {
+function Wizard({
+  onClose,
+  onSaved,
+  onScreenshot,
+  startWith = "in_stock",
+}: {
+  onClose: () => void;
+  onSaved?: (m: string) => void;
+  onScreenshot?: () => void;
+  startWith?: Kind;
+}) {
   const { data, addAccount, upsertAsset, updateAsset, addTxn } = useStore();
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
 
-  const [cls, setCls] = useState<AssetClass>("in_stock");
+  const [kind, setKind] = useState<Kind>(startWith);
+  const cls: AssetClass = kind === "cash" ? "in_stock" : kind;
   const [picked, setPicked] = useState<Picked | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
@@ -133,7 +176,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
   };
 
   useEffect(() => {
-    if (picked || byHand || query.trim().length < 2) {
+    if (kind === "cash" || picked || byHand || query.trim().length < 2) {
       setHits(null);
       return;
     }
@@ -152,7 +195,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
       ctrl.abort();
       clearTimeout(timer);
     };
-  }, [query, cls, picked, byHand]);
+  }, [query, cls, kind, picked, byHand]);
 
   function choose(asset: Picked) {
     setPicked(asset);
@@ -206,36 +249,52 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
     onClose();
   }
 
-  const titles = ["What do you own?", "Where do you hold it?", "How much is it?"];
+  const cash = kind === "cash";
+  const titles: [string, string][] = cash
+    ? [["Set aside", "some cash."]]
+    : [
+        ["What do", "you own?"],
+        ["Where do", "you hold it?"],
+        ["How much", "is it worth?"],
+      ];
+  const total = titles.length;
+  const [lead, tail] = titles[Math.min(step, total - 1)];
 
   return (
     <Modal
-      title="Add a holding"
+      title={cash ? "Add cash" : "Add a holding"}
+      tone="dark"
+      width={600}
       onClose={onClose}
       header={
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3.5">
           {step > 0 && (
             <button
               type="button"
               aria-label="Back"
               onClick={() => go(step - 1)}
-              className="press grid size-9 shrink-0 place-items-center rounded-full bg-sunken text-ink-2 hover:text-ink"
+              className="press pill grid size-10 shrink-0 place-items-center rounded-full text-ink-2 hover:text-ink"
             >
               {Icon.back}
             </button>
           )}
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-ink-3">Step {step + 1} of 3</p>
-            <h2 className="truncate text-xl font-extrabold tracking-tight">{titles[step]}</h2>
+            <p className="label flex items-center gap-2 text-ink-3">
+              <span className="size-[5px] rounded-full bg-up shadow-[0_0_8px_var(--up)]" aria-hidden />
+              {cash ? "Cash · One step" : `Step ${String(step + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`}
+            </p>
+            <h2 key={`${kind}-${step}`} className="rise-in mt-2 truncate font-display text-[34px] font-normal leading-[1] tracking-[-0.01em] sm:text-[40px]">
+              {lead} <span className="italic text-ink-3">{tail}</span>
+            </h2>
           </div>
         </div>
       }
     >
       <div className="mb-6 flex gap-1.5" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <span key={i} className="h-1 flex-1 overflow-hidden rounded-full bg-sunken">
+        {Array.from({ length: total }, (_, i) => (
+          <span key={i} className="rail h-[2px] flex-1 overflow-hidden rounded-full">
             <span
-              className="block h-full rounded-full bg-accent transition-transform duration-500 ease-out-quint"
+              className="block h-full rounded-full transition-transform duration-700 ease-out-quint"
               style={{ transform: `scaleX(${i <= step ? 1 : 0})`, transformOrigin: "left" }}
             />
           </span>
@@ -243,10 +302,10 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
       </div>
 
       {picked && step > 0 && (
-        <div className="mb-5 flex items-center gap-3 rounded-2xl bg-sunken p-3 ring-1 ring-line">
+        <div className="readout mb-5 flex items-center gap-3 rounded-2xl p-3">
           <ClassGlyph cls={picked.cls} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold">{picked.name}</p>
+            <p className="truncate text-sm font-semibold">{picked.name}</p>
             <p className="num text-xs text-ink-2">
               {CLASS_META[picked.cls].short}
               {live.status === "ready" && live.price !== null && (
@@ -255,6 +314,11 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
               {live.status === "loading" && <> · fetching price…</>}
             </p>
           </div>
+          {live.status === "ready" && (
+            <span className="label flex items-center gap-1.5 text-[9.5px] text-up">
+              <span className="size-[5px] animate-pulse rounded-full bg-up" aria-hidden /> Live
+            </span>
+          )}
         </div>
       )}
 
@@ -262,37 +326,50 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
         {/* ------------------------------ Step 1 ------------------------------ */}
         {step === 0 && (
           <div className="space-y-4">
-            <div role="radiogroup" aria-label="Asset type" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {CLASS_ORDER.map((c) => {
-                const on = c === cls;
+            <div role="radiogroup" aria-label="What to add" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {[...CLASS_ORDER, "cash" as const].map((c, i) => {
+                const on = c === kind;
+                const meta = c === "cash" ? CASH_TILE : CLASS_META[c];
                 return (
                   <button
                     key={c}
                     type="button"
                     role="radio"
                     aria-checked={on}
+                    style={{ "--tile": meta.color, animationDelay: `${i * 45}ms` } as React.CSSProperties}
                     onClick={() => {
-                      setCls(c);
+                      setKind(c);
                       setQuery("");
                       setHits(null);
                       setByHand(false);
-                      setHandCur(c === "us_stock" || c === "crypto" ? "USD" : "INR");
+                      setError("");
+                      if (c !== "cash") setHandCur(c === "us_stock" || c === "crypto" ? "USD" : "INR");
                     }}
-                    className={`press flex flex-col items-start gap-2.5 rounded-[18px] border p-3 text-left ${
-                      on ? "border-accent bg-accent-soft" : "border-line hover:border-ink-3"
-                    }`}
+                    className={`tile item-in press flex flex-col items-start gap-3 rounded-[18px] p-3 text-left ${c === "cash" ? "max-sm:col-span-2 max-sm:flex-row max-sm:items-center" : ""}`}
                   >
-                    <ClassGlyph cls={c} size={34} />
+                    {c === "cash" ? (
+                      <span
+                        aria-hidden
+                        className="grid size-[34px] shrink-0 place-items-center rounded-[13px]"
+                        style={{ color: CASH_COLOR, background: `color-mix(in srgb, ${CASH_COLOR} 14%, transparent)` }}
+                      >
+                        {CASH_TILE.glyph}
+                      </span>
+                    ) : (
+                      <ClassGlyph cls={c} size={34} />
+                    )}
                     <span>
-                      <span className="block text-[13px] font-bold leading-tight">{CLASS_META[c].short}</span>
-                      <span className="block text-[11px] text-ink-2">{CLASS_META[c].hint}</span>
+                      <span className="block text-[13px] font-semibold leading-tight">{meta.short}</span>
+                      <span className="mt-0.5 block text-[11px] leading-tight text-ink-3">{meta.hint}</span>
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            {byHand ? (
+            {cash ? (
+              <CashForm onSaved={onSaved} onClose={onClose} />
+            ) : byHand ? (
               <div className="space-y-3">
                 <div className="flex gap-2">
                   <input
@@ -316,12 +393,12 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                 <p className="text-xs leading-relaxed text-ink-3">
                   There&apos;s no live price for things added by hand. You tell Folio what it&apos;s worth and
                   update it when that changes.{" "}
-                  <button type="button" className="font-semibold text-accent" onClick={() => setByHand(false)}>
+                  <button type="button" className="font-semibold text-ink underline decoration-white/25 underline-offset-4 hover:decoration-white" onClick={() => setByHand(false)}>
                     Search instead
                   </button>
                 </p>
-                <Button
-                  className="h-12 w-full text-sm"
+                <Cta
+                  className="h-12 w-full"
                   disabled={!handName.trim()}
                   onClick={() =>
                     choose({
@@ -334,23 +411,23 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                   }
                 >
                   Continue
-                </Button>
+                </Cta>
               </div>
             ) : (
               <>
-                <div className="field-wrap flex h-14 items-center gap-3 rounded-2xl border border-line bg-surface px-4 text-ink-3 transition-shadow">
+                <div className="field-wrap flex h-14 items-center gap-3 rounded-2xl border px-4 text-ink-3 transition-shadow">
                   {Icon.search}
                   <input
                     autoFocus
                     aria-label={`Search ${CLASS_META[cls].label}`}
-                    className="w-full min-w-0 bg-transparent text-[15px] font-semibold text-ink outline-none placeholder:font-medium placeholder:text-ink-3"
+                    className="w-full min-w-0 bg-transparent text-[15px] font-medium text-ink outline-none placeholder:font-normal placeholder:text-ink-3"
                     placeholder={
                       cls === "mf" ? "Search a fund" : cls === "crypto" ? "Search a coin" : "Search a company or ticker"
                     }
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
-                  {searching && <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />}
+                  {searching && <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-white/10 border-t-white/80" />}
                 </div>
 
                 {query.trim().length < 2 ? (
@@ -361,7 +438,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                         type="button"
                         onClick={() => setQuery(name)}
                         style={{ animationDelay: `${i * 35}ms` }}
-                        className="item-in press rounded-full bg-sunken px-3.5 py-2 text-[13px] font-semibold text-ink-2 ring-1 ring-line hover:text-ink"
+                        className="item-in press pill rounded-full px-3.5 py-2 text-[13px] font-medium text-ink-2 hover:text-ink"
                       >
                         {name}
                       </button>
@@ -374,37 +451,67 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                         <button
                           type="button"
                           onClick={() => choose(h)}
-                          className="press group flex w-full items-center gap-3 rounded-2xl p-2.5 text-left hover:bg-sunken"
+                          className="press group flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition-colors hover:bg-white/[0.05]"
                         >
                           <ClassGlyph cls={h.cls} size={38} />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-bold">{h.name}</span>
-                            <span className="text-xs text-ink-2">
+                            <span className="block truncate text-sm font-semibold">{h.name}</span>
+                            <span className="text-xs text-ink-3">
                               {h.cls === "mf" ? "Mutual fund" : h.ticker}
                               {h.exchange && ` · ${h.exchange}`}
                             </span>
                           </span>
-                          <span className="grid size-8 shrink-0 place-items-center rounded-full text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          <span className="grid size-8 shrink-0 place-items-center rounded-full text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                             <span className="rotate-180">{Icon.back}</span>
                           </span>
                         </button>
                       </li>
                     ))}
                     {hits?.length === 0 && !searching && (
-                      <li className="rounded-2xl bg-sunken p-4 text-sm text-ink-2">
+                      <li className="readout rounded-2xl p-4 text-sm text-ink-2">
                         Nothing matched “{query.trim()}”. Check the spelling, or add it by hand.
                       </li>
                     )}
-                    {searchError && <li className="rounded-2xl bg-sunken p-4 text-sm text-ink-2">{searchError}</li>}
+                    {searchError && <li className="readout rounded-2xl p-4 text-sm text-ink-2">{searchError}</li>}
                   </ul>
                 )}
 
                 <p className="text-xs text-ink-3">
                   Not listed anywhere?{" "}
-                  <button type="button" className="font-semibold text-accent" onClick={() => setByHand(true)}>
+                  <button type="button" className="font-semibold text-ink underline decoration-white/25 underline-offset-4 hover:decoration-white" onClick={() => setByHand(true)}>
                     Add it by hand
                   </button>
                 </p>
+
+                {onScreenshot && (
+                  <>
+                    <div className="flex items-center gap-3 pt-1" aria-hidden>
+                      <span className="h-px flex-1 bg-line" />
+                      <span className="label text-[9.5px] text-ink-3">Or bring everything at once</span>
+                      <span className="h-px flex-1 bg-line" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onScreenshot}
+                      className="press pill streak-host group relative flex w-full items-center gap-3.5 rounded-[20px] p-3.5 text-left"
+                    >
+                      <span className="streak-clip" aria-hidden />
+                      <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/[0.06] text-ink ring-1 ring-white/10">
+                        {ScreenshotIcon}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="text-[14.5px] font-semibold">Upload screenshots</span>
+                          <span className="ai-tag label rounded-full px-2 py-[3px] text-[9px] text-ink-2">AI</span>
+                        </span>
+                        <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">
+                          Snap your broker&apos;s holdings screen. You check every row before it&apos;s added.
+                        </span>
+                      </span>
+                      <span className="rotate-180 text-ink-3 transition-transform group-hover:-translate-x-0.5 group-hover:text-ink">{Icon.back}</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -422,25 +529,23 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    style={{ animationDelay: `${i * 40}ms` }}
+                    style={{ "--tile": "#9db8ff", animationDelay: `${i * 40}ms` } as React.CSSProperties}
                     onClick={() => {
                       setAddingAccount(false);
                       setAccountId(a.id);
                       go(2);
                     }}
-                    className={`item-in press flex h-16 items-center justify-between gap-2 rounded-[18px] border px-4 text-left text-[15px] font-bold ${
-                      on ? "border-accent bg-accent-soft" : "border-line hover:border-ink-3"
-                    }`}
+                    className="tile item-in press flex h-16 items-center justify-between gap-2 rounded-[18px] px-4 text-left text-[15px] font-semibold"
                   >
                     <span className="truncate">{a.name}</span>
-                    {on && <span className="text-accent">{Icon.check}</span>}
+                    {on && <span className="text-ink">{Icon.check}</span>}
                   </button>
                 );
               })}
               <button
                 type="button"
                 onClick={() => setAddingAccount(true)}
-                className="press flex h-16 items-center gap-2 rounded-[18px] border border-dashed border-ink-3/60 px-4 text-[15px] font-semibold text-ink-2 hover:text-ink"
+                className="press flex h-16 items-center gap-2 rounded-[18px] border border-dashed border-white/15 px-4 text-[15px] font-medium text-ink-2 transition-colors hover:border-white/30 hover:text-ink"
               >
                 {Icon.plus} Another
               </button>
@@ -464,9 +569,9 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
                   value={newAccount}
                   onChange={(e) => setNewAccount(e.target.value)}
                 />
-                <Button type="submit" className="h-12 shrink-0 px-5" disabled={!newAccount.trim()}>
+                <Cta type="submit" className="h-12 shrink-0" disabled={!newAccount.trim()}>
                   Next
-                </Button>
+                </Cta>
               </form>
             )}
           </div>
@@ -476,8 +581,8 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
         {step === 2 && picked && (
           <form onSubmit={save} className="space-y-4">
             <div>
-              <div className="mb-1.5 flex items-center justify-between gap-3">
-                <label htmlFor="invested" className="text-[13px] font-semibold">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label htmlFor="invested" className="label text-ink-3">
                   You put in
                 </label>
                 <Segmented
@@ -496,8 +601,8 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
 
             {needUnits ? (
               <div>
-                <label htmlFor="units" className="mb-1.5 block text-[13px] font-semibold">
-                  {CLASS_META[picked.cls].unit[0].toUpperCase() + CLASS_META[picked.cls].unit.slice(1)} you hold
+                <label htmlFor="units" className="label mb-2 block text-ink-3">
+                  {CLASS_META[picked.cls].unit} you hold
                 </label>
                 <input
                   id="units"
@@ -513,7 +618,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
               </div>
             ) : (
               <div>
-                <label htmlFor="worth" className="mb-1.5 block text-[13px] font-semibold">
+                <label htmlFor="worth" className="label mb-2 block text-ink-3">
                   It&apos;s worth today
                 </label>
                 <MoneyInput id="worth" value={worth} onChange={setWorth} currency={entryCur} />
@@ -539,22 +644,22 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
               }`}
             >
               <div className="min-h-0">
-                <dl className="num grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-line text-center ring-1 ring-line">
-                  <div className="bg-sunken px-2 py-3">
-                    <dt className="text-[11px] text-ink-3">{noFeed ? "Held as" : "You hold"}</dt>
-                    <dd className="mt-0.5 truncate text-sm font-bold">
+                <dl className="readout num grid grid-cols-3 divide-x divide-white/[0.07] rounded-2xl text-center">
+                  <div className="px-2 py-3">
+                    <dt className="label text-[9.5px] text-ink-3">{noFeed ? "Held as" : "You hold"}</dt>
+                    <dd className="mt-1 truncate text-sm font-semibold">
                       {derived ? (noFeed ? "1 lot" : `${fmtQty(derived.qty)}`) : "–"}
                     </dd>
                   </div>
-                  <div className="bg-sunken px-2 py-3">
-                    <dt className="text-[11px] text-ink-3">Avg. cost</dt>
-                    <dd className="mt-0.5 truncate text-sm font-bold">
+                  <div className="px-2 py-3">
+                    <dt className="label text-[9.5px] text-ink-3">Avg. cost</dt>
+                    <dd className="mt-1 truncate text-sm font-semibold">
                       {derived ? fmtPrice(derived.avg, currency) : "–"}
                     </dd>
                   </div>
-                  <div className="bg-sunken px-2 py-3">
-                    <dt className="text-[11px] text-ink-3">Return</dt>
-                    <dd className="mt-0.5 flex justify-center">
+                  <div className="px-2 py-3">
+                    <dt className="label text-[9.5px] text-ink-3">Return</dt>
+                    <dd className="mt-1 flex justify-center">
                       {gain !== null ? (
                         <Delta value={gain}>{nInvested > 0 ? pct((gain / nInvested) * 100) : signed(gain, currency)}</Delta>
                       ) : (
@@ -568,7 +673,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
 
             {showSince ? (
               <div className="item-in">
-                <label htmlFor="since" className="mb-1.5 block text-[13px] font-semibold">
+                <label htmlFor="since" className="label mb-2 block text-ink-3">
                   Held since
                 </label>
                 <input
@@ -586,7 +691,7 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
             ) : (
               <button
                 type="button"
-                className="text-[13px] font-semibold text-accent"
+                className="text-[13px] font-medium text-ink-2 underline decoration-white/25 underline-offset-4 hover:text-ink hover:decoration-white"
                 onClick={() => {
                   setSince(toLocalInput(Date.now()));
                   setShowSince(true);
@@ -602,13 +707,108 @@ function Wizard({ onClose, onSaved }: { onClose: () => void; onSaved?: (m: strin
               </p>
             )}
 
-            <Button type="submit" className="h-[52px] w-full text-[15px]">
+            <Cta type="submit" className="h-[52px] w-full text-[15px]">
               Save holding
-              {gain !== null && nWorth > 0 && <span className="num opacity-80">· {money(Number(worth), entryCur)}</span>}
-            </Button>
+              {gain !== null && nWorth > 0 && <span className="num opacity-60">· {money(Number(worth), entryCur)}</span>}
+            </Cta>
           </form>
         )}
       </div>
     </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Cash: one step, money in                                                   */
+/* ------------------------------------------------------------------------ */
+
+type Day = "today" | "yesterday" | "pick";
+const clock = () => Date.now();
+
+function CashForm({ onSaved, onClose }: { onSaved?: (m: string) => void; onClose: () => void }) {
+  const { addCash } = useStore();
+  const [cur, setCur] = useState<Currency>("INR");
+  const [amount, setAmount] = useState("");
+  const [day, setDay] = useState<Day>("today");
+  const [when, setWhen] = useState(() => toLocalInput(clock()));
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+
+  function save(e: React.FormEvent) {
+    e.preventDefault();
+    const n = Number(amount);
+    if (!(n > 0) || !isFinite(n)) return setError("Enter an amount.");
+    const now = clock();
+    const ts = day === "today" ? now : day === "yesterday" ? now - 86_400_000 : new Date(when).getTime();
+    if (!isFinite(ts) || ts > now + 60_000) return setError("That date is in the future.");
+    addCash({ currency: cur, amount: n, ts, kind: "added", note: note.trim() || undefined });
+    onSaved?.(`Added ${money(n, cur)} cash`);
+    onClose();
+  }
+
+  const chip = (on: boolean) =>
+    `press inline-flex h-8 items-center rounded-full px-3.5 text-xs font-medium transition-colors ${on ? "bg-white text-[#0b0c0f]" : "pill text-ink-2 hover:text-ink"}`;
+
+  return (
+    <form onSubmit={save} className="item-in space-y-4 pt-1">
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <label htmlFor="cash-amount" className="label text-ink-3">
+            Amount
+          </label>
+          <Segmented
+            options={[
+              { value: "INR", label: "₹ INR" },
+              { value: "USD", label: "$ USD" },
+            ]}
+            value={cur}
+            onChange={setCur}
+            label="Cash currency"
+            size="sm"
+          />
+        </div>
+        <MoneyInput id="cash-amount" autoFocus value={amount} onChange={setAmount} currency={cur} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="label mr-1 text-ink-3">When</span>
+        <button type="button" className={chip(day === "today")} onClick={() => setDay("today")}>
+          Today
+        </button>
+        <button type="button" className={chip(day === "yesterday")} onClick={() => setDay("yesterday")}>
+          Yesterday
+        </button>
+        <button type="button" className={chip(day === "pick")} onClick={() => setDay("pick")}>
+          Pick a date
+        </button>
+      </div>
+      {day === "pick" && (
+        <input
+          type="datetime-local"
+          aria-label="Date and time"
+          className="field num item-in"
+          max={toLocalInput(clock())}
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+        />
+      )}
+
+      <input className="field" aria-label="Note" placeholder="Note, optional (e.g. Savings account, Groww wallet)" value={note} onChange={(e) => setNote(e.target.value)} />
+
+      <p className="text-xs leading-relaxed text-ink-3">
+        Cash counts towards your net worth, never as a gain or loss. Money from a sale lands here on its own.
+      </p>
+
+      {error && (
+        <p role="alert" className="text-[13px] font-semibold text-down">
+          {error}
+        </p>
+      )}
+
+      <Cta type="submit" className="h-[52px] w-full text-[15px]">
+        Add cash
+        {Number(amount) > 0 && <span className="num opacity-60">· {money(Number(amount), cur)}</span>}
+      </Cta>
+    </form>
   );
 }

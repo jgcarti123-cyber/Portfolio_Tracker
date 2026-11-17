@@ -141,6 +141,8 @@ export function NetWorthChart({
   missingHistory,
   moods = [],
   classes = [],
+  cash,
+  onCash,
 }: {
   series: DayValue[];
   totals: Totals;
@@ -153,6 +155,9 @@ export function NetWorthChart({
   /** Market mood readings, shown along the bottom for the markets you hold. */
   moods?: MoodReading[];
   classes?: AssetClass[];
+  /** Cash held, in the display currency (left out in a filtered view). */
+  cash?: number;
+  onCash?: () => void;
 }) {
   const moodKeys = (["crypto", "india", "us"] as const).filter((k) => classes.some((c) => MOOD_FOR[c] === k));
   const [mode, setMode] = useState<Mode>("amount");
@@ -266,6 +271,19 @@ export function NetWorthChart({
             </span>
             <Stat label={hovering ? "Invested then" : "Invested"} value={money(heroCost, currency, { decimals: 0 })} />
             <Stat label="Return" value={`${signed(heroGain, currency)} (${pct(heroCost > 0 ? (heroGain / heroCost) * 100 : 0)})`} tone={heroGain} />
+            {cash !== undefined && onCash && !hovering && (
+              <button
+                type="button"
+                onClick={onCash}
+                aria-label={cash > 0 ? "Cash: add or withdraw" : "Add cash"}
+                className="press group inline-flex h-7 items-center gap-2 rounded-full bg-white/[0.06] pl-2.5 pr-3 ring-1 ring-white/10 transition-colors hover:bg-white/[0.1] hover:ring-white/20"
+              >
+                <span className="size-[6px] rounded-full" style={{ background: "var(--cat-6)" }} aria-hidden />
+                <span className="label text-[10px] text-white/45">Cash</span>
+                {cash > 0 && <span className="num text-[13px] font-semibold text-white/90">{money(cash, currency, { decimals: 0 })}</span>}
+                <span className="text-[12px] font-semibold text-white/60 transition-colors group-hover:text-white">{cash > 0 ? "＋" : "+ Add"}</span>
+              </button>
+            )}
           </div>
         </div>
         {!historyShort && n > 1 && (

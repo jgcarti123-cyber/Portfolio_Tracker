@@ -275,7 +275,10 @@ export function Modal({
   header,
   wide,
   width,
+  tone,
 }: {
+  /** "dark": the premium always-dark sheet, whatever the theme. */
+  tone?: "dark";
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -295,15 +298,15 @@ export function Modal({
   }, [onClose]);
   return (
     <div
-      className="fade-in fixed inset-0 z-50 grid place-items-end backdrop-blur-[6px] sm:place-items-center sm:p-6"
-      style={{ background: "var(--scrim)" }}
+      className={`fade-in fixed inset-0 z-50 grid place-items-end sm:place-items-center sm:p-6 ${tone === "dark" ? "backdrop-blur-[14px]" : "backdrop-blur-[6px]"}`}
+      style={{ background: tone === "dark" ? "rgba(4, 5, 7, 0.62)" : "var(--scrim)" }}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         role="dialog"
         aria-modal
         aria-label={title}
-        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-pop sm:rounded-[30px] sm:p-7 ${width ? "sm:max-w-[var(--modal-w)]" : wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
+        className={`pop-in max-h-[94dvh] w-full overflow-y-auto overflow-x-hidden rounded-t-[30px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:rounded-[30px] sm:p-7 ${tone === "dark" ? "scope-dark sheet-premium" : "bg-surface shadow-pop"} ${width ? "sm:max-w-[var(--modal-w)]" : wide ? "sm:max-w-[760px]" : "sm:max-w-[540px]"}`}
         style={width ? ({ "--modal-w": `${width}px` } as React.CSSProperties) : undefined}
       >
         <div className="mb-5 flex items-center justify-between gap-3">

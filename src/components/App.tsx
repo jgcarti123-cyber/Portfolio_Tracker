@@ -31,6 +31,7 @@ import { Highlights } from "./Highlights";
 import { History } from "./History";
 import { Holdings } from "./Holdings";
 import { ImportFlow } from "./ImportFlow";
+import { ScreenshotIcon, ScreenshotImport } from "./ScreenshotImport";
 import { NetWorthChart } from "./NetWorthChart";
 import { DashboardLens } from "./DashboardLens";
 import { MoversWaterfall } from "./MoversWaterfall";
@@ -67,6 +68,8 @@ function Portfolio() {
   const [currency, setCurrency] = useState<Currency>("INR");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Screenshot import opened straight from Add a holding (Back returns there) or the welcome screen.
+  const [shots, setShots] = useState<null | "add" | "welcome">(null);
   const [card, setCard] = useState<CardData | null>(null);
   const [cashOpen, setCashOpen] = useState(false);
   const mood = useMood();
@@ -203,6 +206,12 @@ function Portfolio() {
               </button>
             )}
             {!openAsset && !empty && (
+              <button type="button" onClick={() => setCashOpen(true)} aria-label="Cash" data-tip="Cash" className="press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full">
+                <span className="streak-clip" aria-hidden />
+                {Icon.wallet}
+              </button>
+            )}
+            {!openAsset && !empty && (
               <button type="button" onClick={() => setImporting(true)} aria-label="Import holdings" data-tip="Import a statement" className="press glass glass-btn streak-host relative grid size-9 place-items-center rounded-full">
                 <span className="streak-clip" aria-hidden />
                 {Icon.upload}
@@ -276,7 +285,7 @@ function Portfolio() {
       </header>
 
       {empty && !openAsset ? (
-        <Welcome onAdd={() => setAdding(true)} onImport={() => setImporting(true)} />
+        <Welcome onAdd={() => setAdding(true)} onShots={() => setShots("welcome")} onImport={() => setImporting(true)} />
       ) : (
       <div className={`mx-auto max-w-[1180px] px-4 pt-2 sm:px-6 ${assistOpen ? "pb-[60dvh] lg:pb-16" : "pb-16"}`}>
         {openAsset ? (
@@ -321,6 +330,8 @@ function Portfolio() {
                   missingHistory={scoped.data.assets.filter((a) => missing.includes(a.id)).map((a) => a.name)}
                   moods={mood.readings}
                   classes={[...new Set(scoped.positions.map((p) => p.asset.cls))]}
+                  cash={filtered ? undefined : cashNow}
+                  onCash={() => setCashOpen(true)}
                 />
                 <DashboardLens
                   tabs={[
@@ -394,12 +405,32 @@ function Portfolio() {
           onSaved={notify}
         />
       )}
-      {adding && <AddHolding onClose={() => setAdding(false)} onSaved={notify} />}
+      {adding && (
+        <AddHolding
+          onClose={() => setAdding(false)}
+          onSaved={notify}
+          onScreenshot={() => {
+            setAdding(false);
+            setShots("add");
+          }}
+        />
+      )}
+      {shots && (
+        <ScreenshotImport
+          tone="dark"
+          onClose={() => setShots(null)}
+          onBack={() => {
+            if (shots === "add") setAdding(true);
+            setShots(null);
+          }}
+          onSaved={notify}
+        />
+      )}
       {syncOpen && <SyncPanel onClose={() => setSyncOpen(false)} />}
       {card && <ShareCard data={card} onClose={() => setCard(null)} />}
       {importing && <ImportFlow onClose={() => setImporting(false)} onSaved={notify} />}
       {cashOpen && (
-        <Modal title="Cash" header={<span />} onClose={() => setCashOpen(false)} wide>
+        <Modal title="Cash" header={<span />} tone="dark" onClose={() => setCashOpen(false)} wide>
           <CashCard currency={currency} usdInr={market.usdInr} onSaved={notify} />
         </Modal>
       )}
@@ -423,7 +454,7 @@ function Portfolio() {
  * The first room after the vault is made: the unlock panorama carries on behind an editorial
  * headline, with the header's white pill and glass button as the only two ways in.
  */
-function Welcome({ onAdd, onImport }: { onAdd: () => void; onImport: () => void }) {
+function Welcome({ onAdd, onShots, onImport }: { onAdd: () => void; onShots: () => void; onImport: () => void }) {
   return (
     <main className="relative flex min-h-[calc(100dvh-64px)] flex-col overflow-hidden text-ink">
 
@@ -457,6 +488,11 @@ function Welcome({ onAdd, onImport }: { onAdd: () => void; onImport: () => void 
             <button type="button" onClick={onAdd} className="press cta streak-host relative inline-flex h-12 items-center gap-2 rounded-full pl-5 pr-6 text-[14.5px] font-semibold tracking-[-0.005em]">
               <span className="streak-clip" aria-hidden />
               {Icon.plus} Add your first holding
+            </button>
+            <button type="button" onClick={onShots} className="press pill streak-host relative inline-flex h-12 items-center gap-2 rounded-full pl-5 pr-4 text-[14.5px] font-semibold text-ink">
+              <span className="streak-clip" aria-hidden />
+              {ScreenshotIcon} Upload screenshots
+              <span className="ai-tag label ml-0.5 rounded-full px-2 py-[3px] text-[9px] text-ink-2">AI</span>
             </button>
             <button type="button" onClick={onImport} className="press pill streak-host relative inline-flex h-12 items-center gap-2 rounded-full pl-5 pr-6 text-[14.5px] font-semibold text-ink">
               <span className="streak-clip" aria-hidden />

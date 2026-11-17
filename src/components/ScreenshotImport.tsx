@@ -132,7 +132,7 @@ async function redacted(shot: Shot): Promise<string> {
   return c.toDataURL("image/jpeg", 0.86);
 }
 
-export function ScreenshotImport({ onClose, onBack, onSaved }: { onClose: () => void; onBack: () => void; onSaved?: (m: string) => void }) {
+export function ScreenshotImport({ onClose, onBack, onSaved, tone }: { onClose: () => void; onBack: () => void; onSaved?: (m: string) => void; tone?: "dark" }) {
   const { data, applyImport } = useStore();
   const { ensureConsent, status } = useAi();
   const [step, setStep] = useState<"pick" | "hide" | "confirm">("pick");
@@ -381,6 +381,7 @@ export function ScreenshotImport({ onClose, onBack, onSaved }: { onClose: () => 
   return (
     <Modal
       title={titles[step]}
+      tone={tone}
       onClose={onClose}
       width={step === "confirm" ? 1080 : step === "hide" ? 760 : undefined}
       header={
